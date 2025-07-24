@@ -49,6 +49,8 @@ os.makedirs(out_dir, exist_ok=True)
 
 files = natsorted(glob(os.path.join(inp_dir, '*.jpg'))
                   + glob(os.path.join(inp_dir, '*.JPG'))
+                  + glob(os.path.join(inp_dir, '*.bmp'))
+                 + glob(os.path.join(inp_dir, '*.BMP'))
                   + glob(os.path.join(inp_dir, '*.png'))
                   + glob(os.path.join(inp_dir, '*.PNG')))
 
@@ -77,7 +79,7 @@ for file_ in files:
     restored = img_as_ubyte(restored[0])
 
     f = os.path.splitext(os.path.split(file_)[-1])[0]
-    save_img((os.path.join(out_dir, f + '.png')), restored)
+    save_img((os.path.join(out_dir, f + '.bmp')), restored)
 
 print(f"Files saved at {out_dir}")
 print('finish !')

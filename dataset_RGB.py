@@ -7,7 +7,7 @@ import random
 
 
 def is_image_file(filename):
-    return any(filename.endswith(extension) for extension in ['jpeg', 'JPEG', 'jpg', 'png', 'JPG', 'PNG', 'gif','bmp'])
+    return any(filename.endswith(extension) for extension in ['jpeg', 'JPEG', 'jpg', 'png', 'JPG', 'PNG', 'gif','bmp','BMP'])
 
 
 class DataLoaderTrain(Dataset):
