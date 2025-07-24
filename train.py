@@ -227,6 +227,7 @@ plt.xlabel('Epoch')
 plt.ylabel('Loss')
 plt.title('Training Loss per Epoch')
 plt.grid(True)
+plt.savefig(os.path.join(log_dir, 'training_loss.png'))
 plt.show()
 
 total_finish_time = (time.time() - total_start_time)  # seconds
