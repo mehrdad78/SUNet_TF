@@ -19,6 +19,7 @@ from tqdm import tqdm
 from tensorboardX import SummaryWriter
 from model.SUNet import SUNet_model
 import matplotlib.pyplot as plt
+from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay
 
 ## Set Seeds
 torch.backends.cudnn.benchmark = True
@@ -122,6 +123,12 @@ best_ssim = 0
 best_epoch_psnr = 0
 best_epoch_ssim = 0
 total_start_time = time.time()
+psnr_history = []
+ssim_history = []
+val_loss_history = []
+
+all_val_preds = []
+all_val_targets = []
 
 for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
     epoch_start_time = time.time()
@@ -152,6 +159,9 @@ for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
         model_restored.eval()
         psnr_val_rgb = []
         ssim_val_rgb = []
+        val_epoch_loss = 0
+        epoch_val_preds = []
+        epoch_val_targets = []
         for ii, data_val in enumerate(val_loader, 0):
             target = data_val[0].cuda()
             input_ = data_val[1].cuda()
@@ -159,16 +169,26 @@ for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
             if target.shape[1] == 3:
                 target = 0.2989 * target[:,0:1] + 0.5870 * target[:,1:2] + 0.1140 * target[:,2:3]
             with torch.no_grad():
-                #restored = model_restored(input_)
                 restored = torch.sigmoid(model_restored(input_))
-
+                val_loss = criterion(restored, target)
+            val_epoch_loss += val_loss.item()
             for res, tar in zip(restored, target):
                 psnr_val_rgb.append(utils.torchPSNR(res, tar))
                 ssim_val_rgb.append(utils.torchSSIM(res.unsqueeze(0), tar.unsqueeze(0)))
-    # Log epoch loss for plotting (after batch loop)
+                # For confusion matrix: flatten and collect predictions and targets
+                pred_bin = (res > 0.5).float().cpu().numpy().flatten()
+                tar_bin = (tar > 0.5).float().cpu().numpy().flatten()
+                epoch_val_preds.extend(pred_bin)
+                epoch_val_targets.extend(tar_bin)
+        # Log epoch loss for plotting (after batch loop)
         loss_history.append(epoch_loss)
+        val_loss_history.append(val_epoch_loss / len(val_loader))
         psnr_val_rgb = torch.stack(psnr_val_rgb).mean().item()
         ssim_val_rgb = torch.stack(ssim_val_rgb).mean().item()
+
+        # Save PSNR and SSIM for plotting
+        psnr_history.append(psnr_val_rgb)
+        ssim_history.append(ssim_val_rgb)
 
         # Save the best PSNR model of validation
         if psnr_val_rgb > best_psnr:
@@ -192,13 +212,14 @@ for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
         print("[epoch %d SSIM: %.4f --- best_epoch %d Best_SSIM %.4f]" % (
             epoch, ssim_val_rgb, best_epoch_ssim, best_ssim))
 
-        """ 
-        # Save evey epochs of model
-        torch.save({'epoch': epoch,
-                    'state_dict': model_restored.state_dict(),
-                    'optimizer': optimizer.state_dict()
-                    }, os.path.join(model_dir, f"model_epoch_{epoch}.pth"))
-        """
+        # Plot and save confusion matrix for this epoch
+        if epoch_val_targets and epoch_val_preds:
+            cm = confusion_matrix(epoch_val_targets, epoch_val_preds)
+            disp = ConfusionMatrixDisplay(confusion_matrix=cm)
+            disp.plot(cmap=plt.cm.Blues)
+            plt.title(f'Validation Confusion Matrix (Epoch {epoch})')
+            plt.savefig(os.path.join(log_dir, f'val_confusion_matrix_epoch_{epoch}.png'))
+            plt.close()
 
         writer.add_scalar('val/PSNR', psnr_val_rgb, epoch)
         writer.add_scalar('val/SSIM', ssim_val_rgb, epoch)
@@ -229,6 +250,48 @@ plt.title('Training Loss per Epoch')
 plt.grid(True)
 plt.savefig(os.path.join(log_dir, 'training_loss.png'))
 plt.show()
+
+# Plot validation loss after all epochs
+if val_loss_history:
+    val_epochs = list(range(start_epoch + Train['VAL_AFTER_EVERY'] - 1, start_epoch + len(val_loss_history) * Train['VAL_AFTER_EVERY'], Train['VAL_AFTER_EVERY']))
+    plt.figure()
+    plt.plot(val_epochs, val_loss_history, marker='o', color='red', label='Validation Loss')
+    plt.xlabel('Epoch')
+    plt.ylabel('Validation Loss')
+    plt.title('Validation Loss per Epoch')
+    plt.grid(True)
+    plt.savefig(os.path.join(log_dir, 'val_loss.png'))
+    plt.show()
+
+# Plot PSNR and SSIM curves after all epochs
+if psnr_history:
+    val_epochs = list(range(start_epoch + Train['VAL_AFTER_EVERY'] - 1, start_epoch + len(psnr_history) * Train['VAL_AFTER_EVERY'], Train['VAL_AFTER_EVERY']))
+    plt.figure()
+    plt.plot(val_epochs, psnr_history, marker='o', label='PSNR')
+    plt.xlabel('Epoch')
+    plt.ylabel('PSNR')
+    plt.title('Validation PSNR per Epoch')
+    plt.grid(True)
+    plt.savefig(os.path.join(log_dir, 'val_psnr.png'))
+    plt.show()
+
+    plt.figure()
+    plt.plot(val_epochs, ssim_history, marker='o', label='SSIM', color='orange')
+    plt.xlabel('Epoch')
+    plt.ylabel('SSIM')
+    plt.title('Validation SSIM per Epoch')
+    plt.grid(True)
+    plt.savefig(os.path.join(log_dir, 'val_ssim.png'))
+    plt.show()
+
+# Plot confusion matrix for validation
+if all_val_targets and all_val_preds:
+    cm = confusion_matrix(all_val_targets, all_val_preds)
+    disp = ConfusionMatrixDisplay(confusion_matrix=cm)
+    disp.plot(cmap=plt.cm.Blues)
+    plt.title('Validation Confusion Matrix')
+    plt.savefig(os.path.join(log_dir, 'val_confusion_matrix.png'))
+    plt.show()
 
 total_finish_time = (time.time() - total_start_time)  # seconds
 print('Total training time: {:.1f} hours'.format((total_finish_time / 60 / 60)))
