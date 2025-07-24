@@ -135,13 +135,9 @@ for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
             param.grad = None
         target = data[0].cuda()
         input_ = data[1].cuda()
-        restored = model_restored(input_)
-
-        # Compute loss
-        #loss = Charbonnier_loss(restored, target)
-        #loss = L1_loss(restored, target)
-
-        # Inside the training loop, replace the loss calculation:
+        # Convert target to grayscale if it is RGB
+        if target.shape[1] == 3:
+            target = 0.2989 * target[:,0:1] + 0.5870 * target[:,1:2] + 0.1140 * target[:,2:3]
         restored = torch.sigmoid(model_restored(input_))  # Add sigmoid activation
         loss = criterion(restored, target)
         
