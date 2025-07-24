@@ -1,7 +1,7 @@
 import torch.nn
 import math
 
-def get_gaussian_kernel(kernel_size=21, sigma=5, channels=3):
+def get_gaussian_kernel(kernel_size=21, sigma=5, channels=1):
     #if not kernel_size: kernel_size = int(2*np.ceil(2*sigma)+1)
     #print("Kernel is: ",kernel_size)
     #print("Sigma is: ",sigma)

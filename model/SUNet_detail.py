@@ -589,7 +589,7 @@ class SUNet(nn.Module):
         use_checkpoint (bool): Whether to use checkpointing to save memory. Default: False
     """
 
-    def __init__(self, img_size=224, patch_size=4, in_chans=3, out_chans=3,
+    def __init__(self, img_size=224, patch_size=4, in_chans=3, out_chans=1,
                  embed_dim=96, depths=[2, 2, 2, 2], num_heads=[3, 6, 12, 24],
                  window_size=7, mlp_ratio=4., qkv_bias=True, qk_scale=None,
                  drop_rate=0., attn_drop_rate=0., drop_path_rate=0.1,
@@ -770,7 +770,7 @@ if __name__ == '__main__':
     height = 64
     width = 64
     x = torch.randn((1, 3, height, width))  # .cuda()
-    model = SUNet(img_size=256, patch_size=4, in_chans=3, out_chans=3,
+    model = SUNet(img_size=256, patch_size=4, in_chans=3, out_chans=1,
                   embed_dim=96, depths=[8, 8, 8, 8],
                   num_heads=[8, 8, 8, 8],
                   window_size=8, mlp_ratio=4., qkv_bias=True, qk_scale=2,
