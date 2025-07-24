@@ -155,13 +155,16 @@ for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
         for ii, data_val in enumerate(val_loader, 0):
             target = data_val[0].cuda()
             input_ = data_val[1].cuda()
+            # Convert target to grayscale if it is RGB
+            if target.shape[1] == 3:
+                target = 0.2989 * target[:,0:1] + 0.5870 * target[:,1:2] + 0.1140 * target[:,2:3]
             with torch.no_grad():
                 #restored = model_restored(input_)
                 restored = torch.sigmoid(model_restored(input_))
 
             for res, tar in zip(restored, target):
                 psnr_val_rgb.append(utils.torchPSNR(res, tar))
-                ssim_val_rgb.append(utils.torchSSIM(restored, target))
+                ssim_val_rgb.append(utils.torchSSIM(res.unsqueeze(0), tar.unsqueeze(0)))
     # Log epoch loss for plotting (after batch loop)
         loss_history.append(epoch_loss)
         psnr_val_rgb = torch.stack(psnr_val_rgb).mean().item()
