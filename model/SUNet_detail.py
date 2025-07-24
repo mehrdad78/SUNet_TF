@@ -642,7 +642,7 @@ class SUNet(nn.Module):
                                drop_path=dpr[sum(depths[:i_layer]):sum(depths[:i_layer + 1])],
                                norm_layer=norm_layer,
                                downsample=PatchMerging if (i_layer < self.num_layers - 1) else None,
-                               use_checkpoint=True)
+                               use_checkpoint=False)
             self.layers.append(layer)
 
         # build decoder layers
