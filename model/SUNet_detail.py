@@ -670,7 +670,7 @@ class SUNet(nn.Module):
                                              depths[:(self.num_layers - 1 - i_layer) + 1])],
                                          norm_layer=norm_layer,
                                          upsample=UpSample if (i_layer < self.num_layers - 1) else None,
-                                         use_checkpoint=use_checkpoint)
+                                         use_checkpoint=False)
             self.layers_up.append(layer_up)
             self.concat_back_dim.append(concat_linear)
 
