@@ -140,8 +140,6 @@ for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
         # Compute loss
         #loss = Charbonnier_loss(restored, target)
         #loss = L1_loss(restored, target)
-        
-        # Place this near the top, after imports and before the loop
 
         # Inside the training loop, replace the loss calculation:
         restored = torch.sigmoid(model_restored(input_))  # Add sigmoid activation
