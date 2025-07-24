@@ -9,7 +9,7 @@ class SUNet_model(nn.Module):
         self.swin_unet = SUNet(img_size=config['SWINUNET']['IMG_SIZE'],
                                patch_size=config['SWINUNET']['PATCH_SIZE'],
                                in_chans=3,
-                               out_chans=3,
+                               out_chans=1,
                                embed_dim=config['SWINUNET']['EMB_DIM'],
                                depths=config['SWINUNET']['DEPTH_EN'],
                                num_heads=config['SWINUNET']['HEAD_NUM'],

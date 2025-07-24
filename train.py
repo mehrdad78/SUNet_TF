@@ -18,6 +18,7 @@ from warmup_scheduler import GradualWarmupScheduler
 from tqdm import tqdm
 from tensorboardX import SummaryWriter
 from model.SUNet import SUNet_model
+import matplotlib.pyplot as plt
 
 ## Set Seeds
 torch.backends.cudnn.benchmark = True
@@ -88,7 +89,9 @@ if Train['RESUME']:
     print('------------------------------------------------------------------')
 
 ## Loss
-L1_loss = nn.L1Loss()
+#L1_loss = nn.L1Loss()
+criterion = nn.BCELoss() 
+loss_history = [] 
 
 ## DataLoaders
 print('==> Loading datasets')
@@ -136,7 +139,14 @@ for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
 
         # Compute loss
         #loss = Charbonnier_loss(restored, target)
-        loss = L1_loss(restored, target)
+        #loss = L1_loss(restored, target)
+        
+        # Place this near the top, after imports and before the loop
+
+        # Inside the training loop, replace the loss calculation:
+        restored = torch.sigmoid(model_restored(input_))  # Add sigmoid activation
+        loss = criterion(restored, target)
+        
 
         # Back propagation
         loss.backward()
@@ -152,12 +162,14 @@ for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
             target = data_val[0].cuda()
             input_ = data_val[1].cuda()
             with torch.no_grad():
-                restored = model_restored(input_)
+                #restored = model_restored(input_)
+                restored = torch.sigmoid(model_restored(input_))
 
             for res, tar in zip(restored, target):
                 psnr_val_rgb.append(utils.torchPSNR(res, tar))
                 ssim_val_rgb.append(utils.torchSSIM(restored, target))
-
+    # Log epoch loss for plotting (after batch loop)
+        loss_history.append(epoch_loss)
         psnr_val_rgb = torch.stack(psnr_val_rgb).mean().item()
         ssim_val_rgb = torch.stack(ssim_val_rgb).mean().item()
 
@@ -208,7 +220,17 @@ for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
 
     writer.add_scalar('train/loss', epoch_loss, epoch)
     writer.add_scalar('train/lr', scheduler.get_lr()[0], epoch)
+total_finish_time = (time.time() - total_start_time)  # seconds
 writer.close()
+
+# Plot training loss after all epochs
+plt.figure()
+plt.plot(range(start_epoch, start_epoch + len(loss_history)), loss_history, marker='o')
+plt.xlabel('Epoch')
+plt.ylabel('Loss')
+plt.title('Training Loss per Epoch')
+plt.grid(True)
+plt.show()
 
 total_finish_time = (time.time() - total_start_time)  # seconds
 print('Total training time: {:.1f} hours'.format((total_finish_time / 60 / 60)))
