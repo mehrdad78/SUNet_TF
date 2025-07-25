@@ -239,29 +239,25 @@ for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
     writer.add_scalar('train/loss', epoch_loss, epoch)
     writer.add_scalar('train/lr', scheduler.get_lr()[0], epoch)
 total_finish_time = (time.time() - total_start_time)  # seconds
+
 writer.close()
 
-# Plot training loss after all epochs
+# Combine training loss and validation loss in one plot
 plt.figure()
-plt.plot(range(start_epoch, start_epoch + len(loss_history)), loss_history, marker='o')
-plt.xlabel('Epoch')
-plt.ylabel('Loss')
-plt.title('Training Loss per Epoch')
-plt.grid(True)
-plt.savefig(os.path.join(log_dir, 'training_loss.png'))
-plt.show()
+epochs_train = list(range(start_epoch, start_epoch + len(loss_history)))
+plt.plot(epochs_train, loss_history, marker='o', label='Training Loss')
 
-# Plot validation loss after all epochs
 if val_loss_history:
     val_epochs = list(range(start_epoch + Train['VAL_AFTER_EVERY'] - 1, start_epoch + len(val_loss_history) * Train['VAL_AFTER_EVERY'], Train['VAL_AFTER_EVERY']))
-    plt.figure()
     plt.plot(val_epochs, val_loss_history, marker='o', color='red', label='Validation Loss')
-    plt.xlabel('Epoch')
-    plt.ylabel('Validation Loss')
-    plt.title('Validation Loss per Epoch')
-    plt.grid(True)
-    plt.savefig(os.path.join(log_dir, 'val_loss.png'))
-    plt.show()
+
+plt.xlabel('Epoch')
+plt.ylabel('Loss')
+plt.title('Training and Validation Loss per Epoch')
+plt.grid(True)
+plt.legend()
+plt.savefig(os.path.join(log_dir, 'train_val_loss.png'))
+plt.show()
 
 # Plot PSNR and SSIM curves after all epochs
 if psnr_history:
