@@ -269,7 +269,10 @@ if val_loss_history:
 # Combine training loss and validation loss in one plot
 plt.figure()
 plt.plot(epochs_train, loss_history, marker='o', label='Training Loss')
+# Only plot validation loss at epochs where it was computed
 if val_loss_history:
+    # Calculate the actual epochs where validation was run
+    val_epochs = [start_epoch + Train['VAL_AFTER_EVERY'] - 1 + i * Train['VAL_AFTER_EVERY'] for i in range(len(val_loss_history))]
     plt.plot(val_epochs, val_loss_history, marker='o', color='red', label='Validation Loss')
 plt.xlabel('Epoch')
 plt.ylabel('Loss')
