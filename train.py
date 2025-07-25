@@ -242,15 +242,35 @@ total_finish_time = (time.time() - total_start_time)  # seconds
 
 writer.close()
 
-# Combine training loss and validation loss in one plot
+
+# Plot training loss after all epochs
 plt.figure()
 epochs_train = list(range(start_epoch, start_epoch + len(loss_history)))
-plt.plot(epochs_train, loss_history, marker='o', label='Training Loss')
+plt.plot(epochs_train, loss_history, marker='o', color='blue')
+plt.xlabel('Epoch')
+plt.ylabel('Loss')
+plt.title('Training Loss per Epoch')
+plt.grid(True)
+plt.savefig(os.path.join(log_dir, 'training_loss.png'))
+plt.show()
 
+# Plot validation loss after all epochs
 if val_loss_history:
     val_epochs = list(range(start_epoch + Train['VAL_AFTER_EVERY'] - 1, start_epoch + len(val_loss_history) * Train['VAL_AFTER_EVERY'], Train['VAL_AFTER_EVERY']))
-    plt.plot(val_epochs, val_loss_history, marker='o', color='red', label='Validation Loss')
+    plt.figure()
+    plt.plot(val_epochs, val_loss_history, marker='o', color='red')
+    plt.xlabel('Epoch')
+    plt.ylabel('Loss')
+    plt.title('Validation Loss per Epoch')
+    plt.grid(True)
+    plt.savefig(os.path.join(log_dir, 'val_loss.png'))
+    plt.show()
 
+# Combine training loss and validation loss in one plot
+plt.figure()
+plt.plot(epochs_train, loss_history, marker='o', label='Training Loss')
+if val_loss_history:
+    plt.plot(val_epochs, val_loss_history, marker='o', color='red', label='Validation Loss')
 plt.xlabel('Epoch')
 plt.ylabel('Loss')
 plt.title('Training and Validation Loss per Epoch')
