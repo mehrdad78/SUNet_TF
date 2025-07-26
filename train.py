@@ -181,7 +181,7 @@ for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
                 epoch_val_preds.extend(pred_bin)
                 epoch_val_targets.extend(tar_bin)
         # Log epoch loss for plotting (after batch loop)
-        loss_history.append(epoch_loss)
+        loss_history.append(epoch_loss / len(train_loader))
         val_loss_history.append(val_epoch_loss / len(val_loader))
         psnr_val_rgb = torch.stack(psnr_val_rgb).mean().item()
         ssim_val_rgb = torch.stack(ssim_val_rgb).mean().item()
@@ -280,6 +280,29 @@ plt.title('Training and Validation Loss per Epoch')
 plt.grid(True)
 plt.legend()
 plt.savefig(os.path.join(log_dir, 'train_val_loss.png'))
+plt.show()
+
+# Plot normalized (min-max) training and validation loss for trend comparison
+import numpy as np
+train_loss_arr = np.array(loss_history)
+val_loss_arr = np.array(val_loss_history) if val_loss_history else None
+
+# Min-max normalization
+def minmax(x):
+    if len(x) < 2 or np.max(x) == np.min(x):
+        return np.zeros_like(x)
+    return (x - np.min(x)) / (np.max(x) - np.min(x))
+
+plt.figure()
+plt.plot(epochs_train, minmax(train_loss_arr), marker='o', label='Training Loss (normalized)')
+if val_loss_history:
+    plt.plot(val_epochs, minmax(val_loss_arr), marker='o', color='red', label='Validation Loss (normalized)')
+plt.xlabel('Epoch')
+plt.ylabel('Normalized Loss')
+plt.title('Normalized Training and Validation Loss per Epoch')
+plt.grid(True)
+plt.legend()
+plt.savefig(os.path.join(log_dir, 'train_val_loss_normalized.png'))
 plt.show()
 
 # Plot PSNR and SSIM curves after all epochs
