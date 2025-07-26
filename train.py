@@ -269,7 +269,9 @@ writer.close()
 
 # Plot training and validation loss per epoch with value labels
 import matplotlib.pyplot as plt
-epochs_train = list(range(start_epoch, start_epoch + len(loss_history)))
+#epochs_train = list(range(start_epoch, start_epoch + len(loss_history)))
+epochs_train = list(range(1, start_epoch + len(loss_history)))  # From 1 to 2
+
 plt.figure()
 plt.plot(epochs_train, loss_history, marker='o', label='Training Loss')
 for x, y in zip(epochs_train, loss_history):
