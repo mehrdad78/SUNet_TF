@@ -7,6 +7,8 @@ from utils import network_parameters
 import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader
+from sklearn.metrics import precision_score, accuracy_score
+
 
 import time
 import utils
@@ -126,6 +128,9 @@ total_start_time = time.time()
 psnr_history = []
 ssim_history = []
 val_loss_history = []
+accuracy_history = []
+precision_history = []
+val_epoch_list = []
 
 all_val_preds = []
 all_val_targets = []
@@ -185,12 +190,16 @@ for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
         val_loss_history.append(val_epoch_loss / len(val_loader))
         psnr_val_rgb = torch.stack(psnr_val_rgb).mean().item()
         ssim_val_rgb = torch.stack(ssim_val_rgb).mean().item()
-
-        # Save PSNR and SSIM for plotting
+          # Log epoch loss
+        loss_history.append(epoch_loss / len(train_loader))
+        val_loss_history.append(val_epoch_loss / len(val_loader))
+        psnr_val_rgb = torch.stack(psnr_val_rgb).mean().item()
+        ssim_val_rgb = torch.stack(ssim_val_rgb).mean().item()
         psnr_history.append(psnr_val_rgb)
         ssim_history.append(ssim_val_rgb)
 
         # Save the best PSNR model of validation
+        '''
         if psnr_val_rgb > best_psnr:
             best_psnr = psnr_val_rgb
             best_epoch_psnr = epoch
@@ -200,9 +209,9 @@ for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
                         }, os.path.join(model_dir, "model_bestPSNR.pth"))
         print("[epoch %d PSNR: %.4f --- best_epoch %d Best_PSNR %.4f]" % (
             epoch, psnr_val_rgb, best_epoch_psnr, best_psnr))
-
+        '''
         # Save the best SSIM model of validation
-        if ssim_val_rgb > best_ssim:
+        '''if ssim_val_rgb > best_ssim:
             best_ssim = ssim_val_rgb
             best_epoch_ssim = epoch
             torch.save({'epoch': epoch,
@@ -211,18 +220,34 @@ for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
                         }, os.path.join(model_dir, "model_bestSSIM.pth"))
         print("[epoch %d SSIM: %.4f --- best_epoch %d Best_SSIM %.4f]" % (
             epoch, ssim_val_rgb, best_epoch_ssim, best_ssim))
-
+            '''
         # Plot and save confusion matrix for this epoch
-        if epoch_val_targets and epoch_val_preds:
-            cm = confusion_matrix(epoch_val_targets, epoch_val_preds)
-            disp = ConfusionMatrixDisplay(confusion_matrix=cm)
-            disp.plot(cmap=plt.cm.Blues)
-            plt.title(f'Validation Confusion Matrix (Epoch {epoch})')
-            plt.savefig(os.path.join(log_dir, f'val_confusion_matrix_epoch_{epoch}.png'))
-            plt.close()
+        cm = confusion_matrix(epoch_val_targets, epoch_val_preds)
+        cm_normalized = cm.astype('float') / cm.sum(axis=1, keepdims=True)
 
-        writer.add_scalar('val/PSNR', psnr_val_rgb, epoch)
-        writer.add_scalar('val/SSIM', ssim_val_rgb, epoch)
+        accuracy = accuracy_score(epoch_val_targets, epoch_val_preds)
+        precision = precision_score(epoch_val_targets, epoch_val_preds, zero_division=0)
+
+        accuracy_history.append(accuracy)
+        precision_history.append(precision)
+        val_epoch_list.append(epoch)
+
+        # Plot confusion matrix
+        fig, ax = plt.subplots()
+        disp = ConfusionMatrixDisplay(confusion_matrix=cm_normalized, display_labels=["Class 0", "Class 1"])
+        disp.plot(cmap=plt.cm.Blues, values_format=".2%", ax=ax)
+        plt.title(f'Normalized Confusion Matrix (Epoch {epoch})')
+        plt.xlabel(f'Predicted Label\nAccuracy: {accuracy:.4f}, Precision: {precision:.4f}')
+        plt.ylabel('True Label')
+        plt.savefig(os.path.join(log_dir, f'val_confusion_matrix_epoch_{epoch}.png'))
+        plt.close()
+
+        # TensorBoard logs
+        #writer.add_scalar('val/PSNR', psnr_val_rgb, epoch)
+        #writer.add_scalar('val/SSIM', ssim_val_rgb, epoch)
+        writer.add_scalar('val/Accuracy', accuracy, epoch)
+        writer.add_scalar('val/Precision', precision, epoch)
+
     scheduler.step()
 
     print("------------------------------------------------------------------")
