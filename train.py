@@ -242,98 +242,47 @@ total_finish_time = (time.time() - total_start_time)  # seconds
 
 writer.close()
 
-
-# Plot training loss after all epochs
-plt.figure()
+# Plot training and validation loss per epoch with value labels
+import matplotlib.pyplot as plt
 epochs_train = list(range(start_epoch, start_epoch + len(loss_history)))
-plt.plot(epochs_train, loss_history, marker='o', color='blue')
-plt.xlabel('Epoch')
-plt.ylabel('Loss')
-plt.title('Training Loss per Epoch')
-plt.grid(True)
-plt.savefig(os.path.join(log_dir, 'training_loss.png'))
-plt.show()
-
-# Plot validation loss after all epochs
-if val_loss_history:
-    val_epochs = list(range(start_epoch + Train['VAL_AFTER_EVERY'] - 1, start_epoch + len(val_loss_history) * Train['VAL_AFTER_EVERY'], Train['VAL_AFTER_EVERY']))
-    plt.figure()
-    plt.plot(val_epochs, val_loss_history, marker='o', color='red')
-    plt.xlabel('Epoch')
-    plt.ylabel('Loss')
-    plt.title('Validation Loss per Epoch')
-    plt.grid(True)
-    plt.savefig(os.path.join(log_dir, 'val_loss.png'))
-    plt.show()
-
-# Combine training loss and validation loss in one plot
 plt.figure()
 plt.plot(epochs_train, loss_history, marker='o', label='Training Loss')
-# Only plot validation loss at epochs where it was computed
+for x, y in zip(epochs_train, loss_history):
+    plt.text(x, y, f'{y:.4f}', ha='center', va='bottom', fontsize=8, color='blue')
+
 if val_loss_history:
-    # Calculate the actual epochs where validation was run
     val_epochs = [start_epoch + Train['VAL_AFTER_EVERY'] - 1 + i * Train['VAL_AFTER_EVERY'] for i in range(len(val_loss_history))]
     plt.plot(val_epochs, val_loss_history, marker='o', color='red', label='Validation Loss')
+    for x, y in zip(val_epochs, val_loss_history):
+        plt.text(x, y, f'{y:.4f}', ha='center', va='bottom', fontsize=8, color='red')
+
 plt.xlabel('Epoch')
 plt.ylabel('Loss')
 plt.title('Training and Validation Loss per Epoch')
 plt.grid(True)
 plt.legend()
-plt.savefig(os.path.join(log_dir, 'train_val_loss.png'))
+plt.tight_layout()
+plt.savefig(os.path.join(log_dir, 'train_val_loss_with_values.png'))
 plt.show()
 
-# Plot normalized (min-max) training and validation loss for trend comparison
-import numpy as np
-train_loss_arr = np.array(loss_history)
-val_loss_arr = np.array(val_loss_history) if val_loss_history else None
+# Save loss values to a text file
+loss_txt_path = os.path.join(log_dir, 'train_val_loss_values.txt')
+with open(loss_txt_path, 'w') as f:
+    f.write('Epoch\tTrain_Loss\tVal_Loss\n')
+    max_epochs = max(len(epochs_train), len(val_loss_history) if val_loss_history else 0)
+    for i in range(max_epochs):
+        epoch_num = epochs_train[i] if i < len(epochs_train) else ''
+        train_loss = f'{loss_history[i]:.6f}' if i < len(loss_history) else ''
+        # Find val loss for this epoch if it exists
+        val_loss = ''
+        if val_loss_history and i < len(val_loss_history):
+            # Only write val_loss at the correct epoch
+            val_epoch = start_epoch + Train['VAL_AFTER_EVERY'] - 1 + i * Train['VAL_AFTER_EVERY']
+            if epoch_num == val_epoch:
+                val_loss = f'{val_loss_history[i]:.6f}'
+        f.write(f'{epoch_num}\t{train_loss}\t{val_loss}\n')
 
-# Min-max normalization
-def minmax(x):
-    if len(x) < 2 or np.max(x) == np.min(x):
-        return np.zeros_like(x)
-    return (x - np.min(x)) / (np.max(x) - np.min(x))
 
-plt.figure()
-plt.plot(epochs_train, minmax(train_loss_arr), marker='o', label='Training Loss (normalized)')
-if val_loss_history:
-    plt.plot(val_epochs, minmax(val_loss_arr), marker='o', color='red', label='Validation Loss (normalized)')
-plt.xlabel('Epoch')
-plt.ylabel('Normalized Loss')
-plt.title('Normalized Training and Validation Loss per Epoch')
-plt.grid(True)
-plt.legend()
-plt.savefig(os.path.join(log_dir, 'train_val_loss_normalized.png'))
-plt.show()
-
-# Plot PSNR and SSIM curves after all epochs
-if psnr_history:
-    val_epochs = list(range(start_epoch + Train['VAL_AFTER_EVERY'] - 1, start_epoch + len(psnr_history) * Train['VAL_AFTER_EVERY'], Train['VAL_AFTER_EVERY']))
-    plt.figure()
-    plt.plot(val_epochs, psnr_history, marker='o', label='PSNR')
-    plt.xlabel('Epoch')
-    plt.ylabel('PSNR')
-    plt.title('Validation PSNR per Epoch')
-    plt.grid(True)
-    plt.savefig(os.path.join(log_dir, 'val_psnr.png'))
-    plt.show()
-
-    plt.figure()
-    plt.plot(val_epochs, ssim_history, marker='o', label='SSIM', color='orange')
-    plt.xlabel('Epoch')
-    plt.ylabel('SSIM')
-    plt.title('Validation SSIM per Epoch')
-    plt.grid(True)
-    plt.savefig(os.path.join(log_dir, 'val_ssim.png'))
-    plt.show()
-
-# Plot confusion matrix for validation
-if all_val_targets and all_val_preds:
-    cm = confusion_matrix(all_val_targets, all_val_preds)
-    disp = ConfusionMatrixDisplay(confusion_matrix=cm)
-    disp.plot(cmap=plt.cm.Blues)
-    plt.title('Validation Confusion Matrix')
-    plt.savefig(os.path.join(log_dir, 'val_confusion_matrix.png'))
-    plt.show()
 
 total_finish_time = (time.time() - total_start_time)  # seconds
 print('Total training time: {:.1f} hours'.format((total_finish_time / 60 / 60)))
