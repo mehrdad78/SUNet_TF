@@ -26,7 +26,7 @@ MODEL:
 
 # Optimization arguments.
 OPTIM:
-  BATCH: 4
+  BATCH: 12
   EPOCHS: 2
   # EPOCH_DECAY: [10]
   LR_INITIAL: 2e-4
