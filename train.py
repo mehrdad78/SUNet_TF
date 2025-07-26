@@ -186,7 +186,7 @@ for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
                 epoch_val_preds.extend(pred_bin)
                 epoch_val_targets.extend(tar_bin)
         # Log epoch loss for plotting (after batch loop)
-        loss_history.append(epoch_loss / len(train_loader))
+        #loss_history.append(epoch_loss / len(train_loader))
         val_loss_history.append(val_epoch_loss / len(val_loader))
         psnr_val_rgb = torch.stack(psnr_val_rgb).mean().item()
         ssim_val_rgb = torch.stack(ssim_val_rgb).mean().item()
@@ -308,6 +308,12 @@ with open(loss_txt_path, 'w') as f:
             if epoch_num == val_epoch:
                 val_loss = f'{val_loss_history[i]:.6f}'
         f.write(f'{epoch_num}\t{train_loss}\t{val_loss}\n')
+# Save accuracy and precision values to a text file
+acc_prec_txt_path = os.path.join(log_dir, 'val_accuracy_precision.txt')
+with open(acc_prec_txt_path, 'w') as f:
+    f.write('Epoch\tAccuracy\tPrecision\n')
+    for i in range(len(val_epoch_list)):
+        f.write(f'{val_epoch_list[i]}\t{accuracy_history[i]:.6f}\t{precision_history[i]:.6f}\n')
 
 
 
