@@ -193,10 +193,10 @@ for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
           # Log epoch loss
         loss_history.append(epoch_loss / len(train_loader))
         val_loss_history.append(val_epoch_loss / len(val_loader))
-        psnr_val_rgb = torch.stack(psnr_val_rgb).mean().item()
-        ssim_val_rgb = torch.stack(ssim_val_rgb).mean().item()
-        psnr_history.append(psnr_val_rgb)
-        ssim_history.append(ssim_val_rgb)
+        #psnr_val_rgb = torch.stack(psnr_val_rgb).mean().item()
+        #ssim_val_rgb = torch.stack(ssim_val_rgb).mean().item()
+        #psnr_history.append(psnr_val_rgb)
+        #ssim_history.append(ssim_val_rgb)
 
         # Save the best PSNR model of validation
         '''
