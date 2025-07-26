@@ -187,7 +187,7 @@ for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
                 epoch_val_targets.extend(tar_bin)
         # Log epoch loss for plotting (after batch loop)
         #loss_history.append(epoch_loss / len(train_loader))
-        val_loss_history.append(val_epoch_loss / len(val_loader))
+        #val_loss_history.append(val_epoch_loss / len(val_loader))
         psnr_val_rgb = torch.stack(psnr_val_rgb).mean().item()
         ssim_val_rgb = torch.stack(ssim_val_rgb).mean().item()
           # Log epoch loss
