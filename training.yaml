@@ -40,4 +40,4 @@ TRAINING:
   VAL_PS: 256
   TRAIN_DIR: './datasets/Denoising_DIV2K/train'       # path to training data
   VAL_DIR: './datasets/Denoising_DIV2K/test' # path to validation data
-  SAVE_DIR: '/kaggle/working/checkpoints33'           # path to save models and images
+  SAVE_DIR: '/kaggle/working/checkpoints34'           # path to save models and images
