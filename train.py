@@ -9,7 +9,8 @@ import torch.optim as optim
 from torch.utils.data import DataLoader
 from sklearn.metrics import precision_score, accuracy_score
 
-
+import torch.nn.functional as F
+from scipy.ndimage import distance_transform_edt
 import time
 import utils
 import numpy as np
@@ -151,7 +152,23 @@ for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
         if target.shape[1] == 3:
             target = 0.2989 * target[:,0:1] + 0.5870 * target[:,1:2] + 0.1140 * target[:,2:3]
         restored = torch.sigmoid(model_restored(input_))  # Add sigmoid activation
-        loss = criterion(restored, target)
+        #loss = criterion(restored, target)
+        loss = 0
+        for j in range(input_.size(0)):  # loop over batch
+            target_j = target[j:j+1]         # shape: [1, 1, H, W]
+            restored_j = restored[j:j+1]     # shape: [1, 1, H, W]
+
+            mask_np = target_j.squeeze().cpu().numpy()
+            pos_dist = distance_transform_edt(mask_np == 0)
+            neg_dist = distance_transform_edt(mask_np == 1)
+            weights = pos_dist + neg_dist
+            weights = weights / (weights.max() + 1e-8)
+
+            weight_tensor = torch.tensor(weights, dtype=torch.float32).unsqueeze(0).unsqueeze(0).cuda()
+
+            loss += F.binary_cross_entropy(restored_j, target_j, weight=weight_tensor)
+
+        loss /= input_.size(0)  # Average loss over batch
         
 
         # Back propagation
