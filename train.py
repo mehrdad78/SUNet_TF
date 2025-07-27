@@ -135,6 +135,9 @@ val_epoch_list = []
 
 all_val_preds = []
 all_val_targets = []
+tp_history = []
+fp_history = []
+
 
 for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
     epoch_start_time = time.time()
@@ -148,11 +151,14 @@ for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
             param.grad = None
         target = data[0].cuda()
         input_ = data[1].cuda()
+        if target.max() > 1:
+            target = (target > 127).float()
         # Convert target to grayscale if it is RGB
         if target.shape[1] == 3:
             target = 0.2989 * target[:,0:1] + 0.5870 * target[:,1:2] + 0.1140 * target[:,2:3]
         restored = torch.sigmoid(model_restored(input_))  # Add sigmoid activation
-        #loss = criterion(restored, target)
+        loss = criterion(restored, target)
+        '''
         loss = 0
         for j in range(input_.size(0)):  # loop over batch
             target_j = target[j:j+1]         # shape: [1, 1, H, W]
@@ -170,7 +176,7 @@ for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
             loss += F.binary_cross_entropy(restored_j, target_j, weight=weight_tensor)
 
         loss /= input_.size(0)  # Average loss over batch
-        
+        '''
 
         # Back propagation
         loss.backward()
@@ -188,6 +194,9 @@ for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
         for ii, data_val in enumerate(val_loader, 0):
             target = data_val[0].cuda()
             input_ = data_val[1].cuda()
+            if target.max() > 1:
+                target = (target > 127).float()
+
             # Convert target to grayscale if it is RGB
             if target.shape[1] == 3:
                 target = 0.2989 * target[:,0:1] + 0.5870 * target[:,1:2] + 0.1140 * target[:,2:3]
@@ -241,6 +250,22 @@ for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
             '''
         # Plot and save confusion matrix for this epoch
         cm = confusion_matrix(epoch_val_targets, epoch_val_preds)
+        if cm.shape == (2, 2): 
+                tn, fp, fn, tp = cm.ravel()
+        else:
+                tn = fp = fn = tp = 0
+                if cm.shape == (1, 1):
+                    if epoch_val_targets[0] == 1:
+                        tp = cm[0, 0]
+                    else:
+                        tn = cm[0, 0]
+                elif cm.shape == (1, 2):
+                    tn, fp = cm[0]
+                elif cm.shape == (2, 1):
+                    fn, tp = cm[:, 0]
+        tp_history.append(tp)
+        fp_history.append(fp)
+        
         cm_normalized = cm.astype('float') / cm.sum(axis=1, keepdims=True)
 
         accuracy = accuracy_score(epoch_val_targets, epoch_val_preds)
@@ -308,6 +333,23 @@ plt.grid(True)
 plt.legend()
 plt.tight_layout()
 plt.savefig(os.path.join(log_dir, 'train_val_loss_with_values.png'))
+plt.show()
+
+# Plot TP and FP over validation epochs
+plt.figure()
+plt.plot(val_epoch_list, tp_history, marker='o', label='True Positives (TP)')
+plt.plot(val_epoch_list, fp_history, marker='x', label='False Positives (FP)', color='orange')
+for x, y in zip(val_epoch_list, tp_history):
+    plt.text(x, y, str(y), ha='center', va='bottom', fontsize=8, color='green')
+for x, y in zip(val_epoch_list, fp_history):
+    plt.text(x, y, str(y), ha='center', va='bottom', fontsize=8, color='orange')
+plt.xlabel('Epoch')
+plt.ylabel('Count')
+plt.title('True Positives and False Positives per Epoch')
+plt.grid(True)
+plt.legend()
+plt.tight_layout()
+plt.savefig(os.path.join(log_dir, 'tp_fp_per_epoch.png'))
 plt.show()
 
 # Save loss values to a text file
