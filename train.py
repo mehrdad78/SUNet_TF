@@ -162,7 +162,8 @@ for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
             pos_dist = distance_transform_edt(mask_np == 0)
             neg_dist = distance_transform_edt(mask_np == 1)
             weights = pos_dist + neg_dist
-            weights = weights / (weights.max() + 1e-8)
+            weights = (weights - weights.min()) / (weights.max() - weights.min() + 1e-8)
+
 
             weight_tensor = torch.tensor(weights, dtype=torch.float32).unsqueeze(0).unsqueeze(0).cuda()
 
