@@ -256,7 +256,7 @@ for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
             '''
         # Plot and save confusion matrix for this epoch
         cm = confusion_matrix(epoch_val_targets, epoch_val_preds)
-        total = tn + fp + fn + tp
+        
         if cm.shape == (2, 2):
             tn, fp, fn, tp = cm.ravel()
         else:
@@ -270,6 +270,8 @@ for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
                 tn, fp = cm[0]
             elif cm.shape == (2, 1):
                 fn, tp = cm[:, 0]
+        # Calculate True Positives (TP) and False Positives (FP)
+        total = tn + fp + fn + tp
         # Normalize to [0, 1] if total > 0
         if total > 0:
             tp_normalized = tp / total
