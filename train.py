@@ -365,10 +365,11 @@ plt.plot(val_epoch_list, tp_history, marker='o', label='True Positives (TP)')
 plt.plot(val_epoch_list, fp_history, marker='x',
          label='False Positives (FP)', color='orange')
 for x, y in zip(val_epoch_list, tp_history):
-    plt.text(x, y, str(y), ha='center', va='bottom', fontsize=8, color='green')
+    plt.text(x, y + 0.002, f'{y*100:.1f}%', ha='center', va='bottom', fontsize=7, color='green')
+
 for x, y in zip(val_epoch_list, fp_history):
-    plt.text(x, y, str(y), ha='center', va='bottom',
-             fontsize=8, color='orange')
+    plt.text(x, y - 0.002, f'{y*100:.1f}%', ha='center', va='top', fontsize=7, color='orange')
+
 plt.xlabel('Epoch')
 plt.ylabel('Count')
 plt.title('True Positives and False Positives per Epoch')
