@@ -279,9 +279,13 @@ for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
         else:
             tp_normalized = 0.0
             fp_normalized = 0.0
+        # ✅ محاسبه TPR و FPR
+        tpr = tp / (tp + fn) if (tp + fn) > 0 else 0.0
+        fpr = fp / (fp + tn) if (fp + tn) > 0 else 0.0
+        
 
-        tp_history.append(tp_normalized)
-        fp_history.append(fp_normalized)
+        tp_history.append(tpr)
+        fp_history.append(fpr)
 
         cm_normalized = cm.astype('float') / cm.sum(axis=1, keepdims=True)
 
@@ -368,7 +372,7 @@ for x, y in zip(val_epoch_list, tp_history):
     plt.text(x, y + 0.002, f'{y*100:.1f}%', ha='center', va='bottom', fontsize=7, color='green')
 
 for x, y in zip(val_epoch_list, fp_history):
-    plt.text(x, y - 0.002, f'{y*100:.1f}%', ha='center', va='top', fontsize=7, color='orange')
+    plt.text(x, y - 0.002, f'{y*100:.1f}%', ha='center', va='top', fontsize=7, color='gray')
 
 plt.xlabel('Epoch')
 plt.ylabel('Count')
