@@ -362,34 +362,35 @@ plt.tight_layout()
 plt.savefig(os.path.join(log_dir, 'train_val_loss_with_values.png'))
 plt.show()
 
-plt.figure(figsize=(10, 6))  # بزرگ‌تر کردن تصویر برای وضوح بیشتر
+plt.figure(figsize=(10, 6))  # بزرگ‌تر برای وضوح
 
 # رسم خطوط
 plt.plot(val_epoch_list, tp_history, marker='o', label='True Positive Rate (TPR)', color='green')
 plt.plot(val_epoch_list, fp_history, marker='x', label='False Positive Rate (FPR)', color='orange')
 
-# فاصله بیشتر برای متن‌ها
+# فاصله متن‌ها
 tpr_offset = 0.03
-fpr_offset = 0.03
+fpr_offset = 0.07  # کمی بیشتر از TPR برای جلوگیری از هم‌پوشانی
 
-# لیبل‌های TPR
+# لیبل‌های TPR (بالای نقطه)
 for x, y in zip(val_epoch_list, tp_history):
     plt.text(x, y + tpr_offset, f'{y*100:.1f}%', ha='center', va='bottom', fontsize=9, color='green')
 
-# لیبل‌های FPR
+# لیبل‌های FPR (بالای نقطه ولی با فاصله بیشتر)
 for x, y in zip(val_epoch_list, fp_history):
-    plt.text(x, y - fpr_offset, f'{y*100:.1f}%', ha='center', va='top', fontsize=9, color='orange')
+    plt.text(x, y + fpr_offset, f'{y*100:.1f}%', ha='center', va='bottom', fontsize=9, color='orange')
 
 # تنظیمات کلی نمودار
 plt.xlabel('Epoch')
 plt.ylabel('Rate')
 plt.title('True Positive Rate (TPR) and False Positive Rate (FPR) per Epoch')
-plt.ylim(0, 1.05)  # محور y از 0 تا کمی بالاتر از 1 برای فضای بیشتر متن‌ها
+plt.ylim(0, 1.15)  # فضای عمودی بیشتر برای نمایش متن‌های بالا
 plt.grid(True)
 plt.legend()
 plt.tight_layout()
 plt.savefig(os.path.join(log_dir, 'tpr_fpr_per_epoch_readable.png'))
 plt.show()
+
 
 
 # Save loss values to a text file
