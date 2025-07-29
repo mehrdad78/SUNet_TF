@@ -337,22 +337,26 @@ writer.close()
 # Plot training and validation loss per epoch with value labels
 # epochs_train = list(range(start_epoch, start_epoch + len(loss_history)))
 epochs_train = list(range(1, start_epoch + len(loss_history)))  # From 1 to 2
+plt.figure(figsize=(10, 6))  # بزرگ‌تر برای وضوح بیشتر
 
-plt.figure()
-plt.plot(epochs_train, loss_history, marker='o', label='Training Loss')
+# Offset برای لیبل‌ها
+train_offset = 0.01
+val_offset = 0.01
+
+# رسم Training Loss
+plt.plot(epochs_train, loss_history, marker='o', label='Training Loss', color='blue')
 for x, y in zip(epochs_train, loss_history):
-    plt.text(x, y, f'{y:.4f}', ha='center',
-             va='bottom', fontsize=8, color='blue')
+    plt.text(x, y + train_offset, f'{y:.4f}', ha='center', va='bottom', fontsize=8, color='blue')
 
+# رسم Validation Loss (در صورت وجود)
 if val_loss_history:
-    val_epochs = [start_epoch + Train['VAL_AFTER_EVERY'] - 1 + i *
-                  Train['VAL_AFTER_EVERY'] for i in range(len(val_loss_history))]
-    plt.plot(val_epochs, val_loss_history, marker='o',
-             color='red', label='Validation Loss')
+    val_epochs = [start_epoch + Train['VAL_AFTER_EVERY'] - 1 + i * Train['VAL_AFTER_EVERY']
+                  for i in range(len(val_loss_history))]
+    plt.plot(val_epochs, val_loss_history, marker='o', color='red', label='Validation Loss')
     for x, y in zip(val_epochs, val_loss_history):
-        plt.text(x, y, f'{y:.4f}', ha='center',
-                 va='bottom', fontsize=8, color='red')
+        plt.text(x, y + val_offset, f'{y:.4f}', ha='center', va='bottom', fontsize=8, color='red')
 
+# تنظیمات نمودار
 plt.xlabel('Epoch')
 plt.ylabel('Loss')
 plt.title('Training and Validation Loss per Epoch')
@@ -361,6 +365,7 @@ plt.legend()
 plt.tight_layout()
 plt.savefig(os.path.join(log_dir, 'train_val_loss_with_values.png'))
 plt.show()
+
 
 plt.figure(figsize=(10, 6))  # بزرگ‌تر برای وضوح
 
