@@ -346,7 +346,7 @@ val_offset = 0.01
 # رسم Training Loss
 plt.plot(epochs_train, loss_history, marker='o', label='Training Loss', color='blue')
 for x, y in zip(epochs_train, loss_history):
-    plt.text(x, y + train_offset, f'{y:.4f}', ha='center', va='bottom', fontsize=8, color='blue')
+    plt.text(x, y + train_offset, f'{y:.2f}', ha='center', va='bottom', fontsize=8, color='blue')
 
 # رسم Validation Loss (در صورت وجود)
 if val_loss_history:
@@ -354,7 +354,7 @@ if val_loss_history:
                   for i in range(len(val_loss_history))]
     plt.plot(val_epochs, val_loss_history, marker='o', color='red', label='Validation Loss')
     for x, y in zip(val_epochs, val_loss_history):
-        plt.text(x, y + val_offset, f'{y:.4f}', ha='center', va='bottom', fontsize=8, color='red')
+        plt.text(x, y + val_offset, f'{y:.2f}', ha='center', va='bottom', fontsize=8, color='red')
 
 # تنظیمات نمودار
 plt.xlabel('Epoch')
