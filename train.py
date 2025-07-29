@@ -103,7 +103,7 @@ loss_history = []
 print('==> Loading datasets')
 train_dataset = get_training_data(train_dir, {'patch_size': Train['TRAIN_PS']})
 train_loader = DataLoader(dataset=train_dataset, batch_size=OPT['BATCH'],
-                          shuffle=True, num_workers=0, drop_last=False)
+                        shuffle=True, num_workers=0, drop_last=False)
 val_dataset = get_validation_data(val_dir, {'patch_size': Train['VAL_PS']})
 val_loader = DataLoader(dataset=val_dataset, batch_size=1, shuffle=False, num_workers=0,
                         drop_last=False)
@@ -256,7 +256,7 @@ for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
             '''
         # Plot and save confusion matrix for this epoch
         cm = confusion_matrix(epoch_val_targets, epoch_val_preds)
-        
+
         if cm.shape == (2, 2):
             tn, fp, fn, tp = cm.ravel()
         else:
@@ -282,7 +282,6 @@ for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
         # ✅ محاسبه TPR و FPR
         tpr = tp / (tp + fn) if (tp + fn) > 0 else 0.0
         fpr = fp / (fp + tn) if (fp + tn) > 0 else 0.0
-        
 
         tp_history.append(tpr)
         fp_history.append(fpr)
@@ -369,10 +368,12 @@ plt.plot(val_epoch_list, tp_history, marker='o', label='True Positives (TP)')
 plt.plot(val_epoch_list, fp_history, marker='x',
          label='False Positives (FP)', color='orange')
 for x, y in zip(val_epoch_list, tp_history):
-    plt.text(x, y + 0.002, f'{y*100:.1f}%', ha='center', va='bottom', fontsize=7, color='green')
+    plt.text(x, y + 0.002, f'{y*100:.1f}%', ha='center',
+             va='bottom', fontsize=7, color='green')
 
 for x, y in zip(val_epoch_list, fp_history):
-    plt.text(x, y - 0.002, f'{y*100:.1f}%', ha='center', va='top', fontsize=7, color='gray')
+    plt.text(x, y - 0.002, f'{y*100:.1f}%',
+             ha='center', va='top', fontsize=7, color='gray')
 
 plt.xlabel('Epoch')
 plt.ylabel('Count')

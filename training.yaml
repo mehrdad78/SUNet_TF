@@ -39,5 +39,5 @@ TRAINING:
   TRAIN_PS: 256
   VAL_PS: 256
   TRAIN_DIR: './datasets/Denoising_DIV2K/train'       # path to training data
-  VAL_DIR: './datasets/Denoising_DIV2K/test' # path to validation data
+  VAL_DIR: '/kaggle/working/Cropped_Corresponding_Static/128x128' # path to validation data
   SAVE_DIR: '/kaggle/working/checkpoints'           # path to save models and images
