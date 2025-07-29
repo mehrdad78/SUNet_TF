@@ -409,6 +409,13 @@ with open(acc_prec_txt_path, 'w') as f:
     for i in range(len(val_epoch_list)):
         f.write(
             f'{val_epoch_list[i]}\t{accuracy_history[i]:.6f}\t{precision_history[i]:.6f}\n')
+# Save TPR and FPR values to a text file
+tp_fp_txt_path = os.path.join(log_dir, 'val_tpr_fpr.txt')
+with open(tp_fp_txt_path, 'w') as f:
+    f.write('Epoch\tTPR\tFPR\n')
+    for i in range(len(val_epoch_list)):
+        f.write(f'{val_epoch_list[i]}\t{tp_history[i]:.6f}\t{fp_history[i]:.6f}\n')
+
 
 
 total_finish_time = (time.time() - total_start_time)  # seconds
