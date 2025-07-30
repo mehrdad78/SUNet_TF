@@ -24,12 +24,16 @@ from model.SUNet import SUNet_model
 import matplotlib.pyplot as plt
 from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay
 
+def set_seed(seed):
+    torch.backends.cudnn.benchmark = True
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+    np.random.seed(seed)
+    random.seed(seed)
+
+
 # Set Seeds
-torch.backends.cudnn.benchmark = True
-random.seed(1234)
-np.random.seed(1234)
-torch.manual_seed(1234)
-torch.cuda.manual_seed_all(1234)
+set_seed(42)
 
 # Load yaml configuration file
 with open('training.yaml', 'r') as config:

@@ -1,6 +1,7 @@
 import torch
 import torch.nn.functional as F
 import torchvision.transforms.functional as TF
+import numpy as np
 from PIL import Image
 import os
 import utils
@@ -14,6 +15,8 @@ from model.SUNet import SUNet_model
 import math
 from tqdm import tqdm
 import yaml
+from sklearn.metrics import confusion_matrix
+
 
 with open('training.yaml', 'r') as config:
     opt = yaml.safe_load(config)
@@ -22,6 +25,7 @@ with open('training.yaml', 'r') as config:
 parser = argparse.ArgumentParser(description='Demo Image Restoration')
 
 parser.add_argument('--input_dir', default='C:/Users/Lab722 BX/Desktop/Kodak24_test/Kodak24_10/', type=str, help='Input images')
+parser.add_argument('--mask_dir', default='C:/path/to/masks/', type=str, help='Directory of ground truth masks')
 parser.add_argument('--window_size', default=8, type=int, help='window size')
 parser.add_argument('--size', default=256, type=int, help='model image patch size')
 parser.add_argument('--stride', default=128, type=int, help='reconstruction stride')
@@ -31,6 +35,8 @@ parser.add_argument('--weights',
                     help='Path to weights')
 
 args = parser.parse_args()
+mask_dir = args.mask_dir
+
 
 
 def overlapped_square(timg, kernel=256, stride=128):
@@ -56,6 +62,20 @@ def overlapped_square(timg, kernel=256, stride=128):
 
 def save_img(filepath, img):
     cv2.imwrite(filepath, cv2.cvtColor(img, cv2.COLOR_RGB2BGR))
+def calculate_tpr_fpr(pred, target):
+    # Binarize predictions and ground truth
+    pred_bin = (pred > 127).astype(np.uint8).flatten()
+    target_bin = (target > 200).astype(np.uint8).flatten()  # ← همین خط که گفتی
+
+    cm = confusion_matrix(target_bin, pred_bin, labels=[0, 1])
+    if cm.shape == (2, 2):
+        tn, fp, fn, tp = cm.ravel()
+    else:
+        tn = fp = fn = tp = 0
+
+    tpr = tp / (tp + fn) if (tp + fn) > 0 else 0.0
+    fpr = fp / (fp + tn) if (fp + tn) > 0 else 0.0
+    return tpr, fpr
 
 
 def load_checkpoint(model, weights):
@@ -131,6 +151,16 @@ for file_ in files:
 
     restored = restored.permute(0, 2, 3, 1).cpu().detach().numpy()
     restored = img_as_ubyte(restored[0])
+    mask_path = os.path.join(mask_dir, os.path.basename(file_))
+    if os.path.exists(mask_path):
+        mask_img = Image.open(mask_path).convert("L")
+        mask_np = np.array(mask_img)
+        pred_np = cv2.cvtColor(restored, cv2.COLOR_RGB2GRAY)
+
+        tpr, fpr = calculate_tpr_fpr(pred_np, mask_np)
+        print(f"{os.path.basename(file_)} — TPR: {tpr:.4f}, FPR: {fpr:.4f}")
+    else:
+        print(f"Mask not found for {file_}, skipping TPR/FPR.")
 
     f = os.path.splitext(os.path.split(file_)[-1])[0]
     save_img((os.path.join(out_dir, f + '.bmp')), restored)

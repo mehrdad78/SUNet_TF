@@ -27,7 +27,7 @@ MODEL:
 # Optimization arguments.
 OPTIM:
   BATCH: 4
-  EPOCHS: 25
+  EPOCHS: 4
   # EPOCH_DECAY: [10]
   LR_INITIAL: 2e-4
   LR_MIN: 1e-6
@@ -39,7 +39,7 @@ TRAINING:
   TRAIN_PS: 256
   VAL_PS: 256
   TRAIN_DIR: './datasets/Denoising_DIV2K/train'       # path to training data
-  VAL_DIR: '/kaggle/working/Cropped_Corresponding_Static/128x128' # path to validation data
+  VAL_DIR: './datasets/Denoising_DIV2K/test' # path to validation data
   SAVE_DIR: '/kaggle/working/checkpoints'           # path to save models and images
 
 #/kaggle/working/Cropped_Corresponding_Static/128x128
