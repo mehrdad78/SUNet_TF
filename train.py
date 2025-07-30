@@ -24,16 +24,12 @@ from model.SUNet import SUNet_model
 import matplotlib.pyplot as plt
 from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay
 
-def set_seed(seed):
-    torch.backends.cudnn.benchmark = True
-    torch.manual_seed(seed)
-    torch.cuda.manual_seed_all(seed)
-    np.random.seed(seed)
-    random.seed(seed)
-
-
 # Set Seeds
-set_seed(42)
+torch.backends.cudnn.benchmark = True
+random.seed(42)
+np.random.seed(42)
+torch.manual_seed(42)
+torch.cuda.manual_seed_all(42)
 
 # Load yaml configuration file
 with open('training.yaml', 'r') as config:
@@ -223,8 +219,8 @@ for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
         # Log epoch loss for plotting (after batch loop)
         # loss_history.append(epoch_loss / len(train_loader))
         # val_loss_history.append(val_epoch_loss / len(val_loader))
-        #psnr_val_rgb = torch.stack(psnr_val_rgb).mean().item()
-        #ssim_val_rgb = torch.stack(ssim_val_rgb).mean().item()
+        psnr_val_rgb = torch.stack(psnr_val_rgb).mean().item()
+        ssim_val_rgb = torch.stack(ssim_val_rgb).mean().item()
         # Log epoch loss
         loss_history.append(epoch_loss / len(train_loader))
         val_loss_history.append(val_epoch_loss / len(val_loader))
