@@ -159,28 +159,21 @@ for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
         if target.shape[1] == 3:
             target = 0.2989 * target[:, 0:1] + 0.5870 * \
                 target[:, 1:2] + 0.1140 * target[:, 2:3]
-        restored = torch.sigmoid(model_restored(
+            
+
+            '''restored = torch.sigmoid(model_restored(
             input_))  # Add sigmoid activation
-        loss = criterion(restored, target)
-        '''
-        loss = 0
-        for j in range(input_.size(0)):  # loop over batch
-            target_j = target[j:j+1]         # shape: [1, 1, H, W]
-            restored_j = restored[j:j+1]     # shape: [1, 1, H, W]
+        loss = criterion(restored, target)'''
+        
+    
+        restored = torch.sigmoid(model_restored(input_))
+        foreground_weight = 3.0
+        weights = torch.where(target > 0.5,
+                      torch.full_like(target, foreground_weight),
+                      torch.ones_like(target)) 
+        loss = F.binary_cross_entropy(restored, target, weight=weights)
 
-            mask_np = target_j.squeeze().cpu().numpy()
-            pos_dist = distance_transform_edt(mask_np == 0)
-            neg_dist = distance_transform_edt(mask_np == 1)
-            weights = pos_dist + neg_dist
-            weights = (weights - weights.min()) / (weights.max() - weights.min() + 1e-8)
-
-
-            weight_tensor = torch.tensor(weights, dtype=torch.float32).unsqueeze(0).unsqueeze(0).cuda()
-
-            loss += F.binary_cross_entropy(restored_j, target_j, weight=weight_tensor)
-
-        loss /= input_.size(0)  # Average loss over batch
-        '''
+        
 
         # Back propagation
         loss.backward()
@@ -207,7 +200,12 @@ for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
                     target[:, 1:2] + 0.1140 * target[:, 2:3]
             with torch.no_grad():
                 restored = torch.sigmoid(model_restored(input_))
-                val_loss = criterion(restored, target)
+                #val_loss = criterion(restored, target)
+                val_weights = torch.where(target > 0.5,
+                              torch.full_like(target, foreground_weight),
+                              torch.ones_like(target))
+
+                val_loss = F.binary_cross_entropy(restored, target, weight=val_weights)
             val_epoch_loss += val_loss.item()
             for res, tar in zip(restored, target):
                 psnr_val_rgb.append(utils.torchPSNR(res, tar))
@@ -231,29 +229,7 @@ for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
         # psnr_history.append(psnr_val_rgb)
         # ssim_history.append(ssim_val_rgb)
 
-        # Save the best PSNR model of validation
-        '''
-        if psnr_val_rgb > best_psnr:
-            best_psnr = psnr_val_rgb
-            best_epoch_psnr = epoch
-            torch.save({'epoch': epoch,
-                        'state_dict': model_restored.state_dict(),
-                        'optimizer': optimizer.state_dict()
-                        }, os.path.join(model_dir, "model_bestPSNR.pth"))
-        print("[epoch %d PSNR: %.4f --- best_epoch %d Best_PSNR %.4f]" % (
-            epoch, psnr_val_rgb, best_epoch_psnr, best_psnr))
-        '''
-        # Save the best SSIM model of validation
-        '''if ssim_val_rgb > best_ssim:
-            best_ssim = ssim_val_rgb
-            best_epoch_ssim = epoch
-            torch.save({'epoch': epoch,
-                        'state_dict': model_restored.state_dict(),
-                        'optimizer': optimizer.state_dict()
-                        }, os.path.join(model_dir, "model_bestSSIM.pth"))
-        print("[epoch %d SSIM: %.4f --- best_epoch %d Best_SSIM %.4f]" % (
-            epoch, ssim_val_rgb, best_epoch_ssim, best_ssim))
-            '''
+        
         # Plot and save confusion matrix for this epoch
         cm = confusion_matrix(epoch_val_targets, epoch_val_preds)
 
@@ -370,8 +346,8 @@ plt.show()
 plt.figure(figsize=(10, 6))  # بزرگ‌تر برای وضوح
 
 # رسم خطوط
-plt.plot(val_epoch_list, tp_history, marker='o', label='True Positive Rate (TPR)', color='green')
-plt.plot(val_epoch_list, fp_history, marker='x', label='False Positive Rate (FPR)', color='orange')
+plt.plot(val_epoch_list, tp_history, marker='o', label='True Positive Rate (TPR) Percent', color='green')
+plt.plot(val_epoch_list, fp_history, marker='x', label='False Positive Rate (FPR) Percent', color='orange')
 
 # فاصله متن‌ها
 tpr_offset = 0.03
@@ -379,11 +355,11 @@ fpr_offset = 0.07  # کمی بیشتر از TPR برای جلوگیری از ه�
 
 # لیبل‌های TPR (بالای نقطه)
 for x, y in zip(val_epoch_list, tp_history):
-    plt.text(x, y + tpr_offset, f'{y*100:.1f}%', ha='center', va='bottom', fontsize=9, color='green')
+    plt.text(x, y + tpr_offset, f'{y*100:.1f}', ha='center', va='bottom', fontsize=9, color='green')
 
 # لیبل‌های FPR (بالای نقطه ولی با فاصله بیشتر)
 for x, y in zip(val_epoch_list, fp_history):
-    plt.text(x, y + fpr_offset, f'{y*100:.1f}%', ha='center', va='bottom', fontsize=9, color='orange')
+    plt.text(x, y + fpr_offset, f'{y*100:.1f}', ha='center', va='bottom', fontsize=9, color='orange')
 
 # تنظیمات کلی نمودار
 plt.xlabel('Epoch')
