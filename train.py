@@ -26,10 +26,10 @@ from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay
 
 # Set Seeds
 torch.backends.cudnn.benchmark = True
-random.seed(1234)
-np.random.seed(1234)
-torch.manual_seed(1234)
-torch.cuda.manual_seed_all(1234)
+random.seed(42)
+np.random.seed(42)
+torch.manual_seed(42)
+torch.cuda.manual_seed_all(42)
 
 # Load yaml configuration file
 with open('training.yaml', 'r') as config:
@@ -153,8 +153,8 @@ for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
             param.grad = None
         target = data[0].cuda()
         input_ = data[1].cuda()
-        if target.max() > 1:
-            target = (target > 127).float()
+       # if target.max() > 1:
+        #    target = (target > 127).float()
         # Convert target to grayscale if it is RGB
         if target.shape[1] == 3:
             target = 0.2989 * target[:, 0:1] + 0.5870 * \
@@ -191,8 +191,8 @@ for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
         for ii, data_val in enumerate(val_loader, 0):
             target = data_val[0].cuda()
             input_ = data_val[1].cuda()
-            if target.max() > 1:
-                target = (target > 127).float()
+           # if target.max() > 1:
+            #    target = (target > 127).float()
 
             # Convert target to grayscale if it is RGB
             if target.shape[1] == 3:
