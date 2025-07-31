@@ -26,10 +26,10 @@ from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay
 
 # Set Seeds
 torch.backends.cudnn.benchmark = True
-random.seed(27)
-np.random.seed(27)
-torch.manual_seed(27)
-torch.cuda.manual_seed_all(27)
+random.seed(1234)
+np.random.seed(1234)
+torch.manual_seed(1234)
+torch.cuda.manual_seed_all(1234)
 
 # Load yaml configuration file
 with open('training.yaml', 'r') as config:
