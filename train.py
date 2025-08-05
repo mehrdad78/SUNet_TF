@@ -92,8 +92,10 @@ if Train['RESUME']:
     print('------------------------------------------------------------------')
 
 # Loss
-# L1_loss = nn.L1Loss()
-criterion = nn.BCELoss()
+
+#criterion = nn.BCELoss()
+criterion = nn.MSELoss()
+
 loss_history = []
 
 # DataLoaders
@@ -149,6 +151,7 @@ for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
         for param in model_restored.parameters():
             param.grad = None
         target = data[0].cuda()
+        target = target / 255.0
         input_ = data[1].cuda()
        # if target.max() > 1:
         #    target = (target > 127).float()
@@ -161,12 +164,15 @@ for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
             input_))  # Add sigmoid activation
         loss = criterion(restored, target)'''
 
-        restored = torch.sigmoid(model_restored(input_))
+        #restored = torch.sigmoid(model_restored(input_))
+        restored = model_restored(input_)
         foreground_weight = 3.0
         weights = torch.where(target > 0.5,
                               torch.full_like(target, foreground_weight),
                               torch.ones_like(target))
-        loss = F.binary_cross_entropy(restored, target, weight=weights)
+        #loss = F.binary_cross_entropy(restored, target, weight=weights)
+        loss = F.mse_loss(restored, target)
+
 
         # Back propagation
         loss.backward()
@@ -183,6 +189,7 @@ for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
         epoch_val_targets = []
         for ii, data_val in enumerate(val_loader, 0):
             target = data_val[0].cuda()
+            target = target / 255.0
             input_ = data_val[1].cuda()
            # if target.max() > 1:
             #    target = (target > 127).float()
@@ -192,16 +199,20 @@ for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
                 target = 0.2989 * target[:, 0:1] + 0.5870 * \
                     target[:, 1:2] + 0.1140 * target[:, 2:3]
             with torch.no_grad():
-                restored = torch.sigmoid(model_restored(input_))
+                #restored = torch.sigmoid(model_restored(input_))
+                restored = model_restored(input_)  # ✅ raw output
+
                 # val_loss = criterion(restored, target)
                 val_weights = torch.where(target > 0.5,
                                           torch.full_like(
                                               target, foreground_weight),
                                           torch.ones_like(target))
 
-                val_loss = F.binary_cross_entropy(
-                    restored, target, weight=val_weights)
+                #val_loss = F.binary_cross_entropy(restored, target, weight=val_weights)
+                val_loss = F.mse_loss(restored, target)
+
             val_epoch_loss += val_loss.item()
+            '''
             for res, tar in zip(restored, target):
                 psnr_val_rgb.append(utils.torchPSNR(res, tar))
                 ssim_val_rgb.append(utils.torchSSIM(
@@ -211,10 +222,11 @@ for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
                 tar_bin = (tar > 0.5).float().cpu().numpy().flatten()
                 epoch_val_preds.extend(pred_bin)
                 epoch_val_targets.extend(tar_bin)
+            '''
         # Log epoch loss
         loss_history.append(epoch_loss / len(train_loader))
         val_loss_history.append(val_epoch_loss / len(val_loader))
-
+        '''
         # Plot and save confusion matrix for this epoch
         cm = confusion_matrix(epoch_val_targets, epoch_val_preds)
 
@@ -247,16 +259,16 @@ for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
         tp_history.append(tpr)
         fp_history.append(fpr)
 
-        cm_normalized = cm.astype('float') / cm.sum(axis=1, keepdims=True)
+        #cm_normalized = cm.astype('float') / cm.sum(axis=1, keepdims=True)
 
-        accuracy = accuracy_score(epoch_val_targets, epoch_val_preds)
-        precision = precision_score(
-            epoch_val_targets, epoch_val_preds, zero_division=0)
+        #accuracy = accuracy_score(epoch_val_targets, epoch_val_preds)
+        #precision = precision_score(
+         #   epoch_val_targets, epoch_val_preds, zero_division=0)
 
-        accuracy_history.append(accuracy)
-        precision_history.append(precision)
+        #accuracy_history.append(accuracy)
+        #precision_history.append(precision)
+        
         val_epoch_list.append(epoch)
-
         # Plot confusion matrix
         fig, ax = plt.subplots()
         disp = ConfusionMatrixDisplay(
@@ -271,9 +283,9 @@ for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
         plt.close()
 
         # TensorBoard logs
-        writer.add_scalar('val/Accuracy', accuracy, epoch)
-        writer.add_scalar('val/Precision', precision, epoch)
-
+       # writer.add_scalar('val/Accuracy', accuracy, epoch)
+       # writer.add_scalar('val/Precision', precision, epoch)
+'''
     scheduler.step()
 
     print("------------------------------------------------------------------")
@@ -330,7 +342,7 @@ plt.show()
 
 
 plt.figure(figsize=(10, 6))  # بزرگ‌تر برای وضوح
-
+'''
 # رسم خطوط
 plt.plot(val_epoch_list, tp_history, marker='o',
          label='True Positive Rate (TPR) Percent', color='green')
@@ -361,7 +373,7 @@ plt.legend()
 plt.tight_layout()
 plt.savefig(os.path.join(log_dir, 'tpr_fpr_per_epoch_readable.png'))
 plt.show()
-
+'''
 
 # Save loss values to a text file
 loss_txt_path = os.path.join(log_dir, 'train_val_loss_values.txt')
@@ -382,6 +394,7 @@ with open(loss_txt_path, 'w') as f:
                 val_loss = f'{val_loss_history[i]:.6f}'
         f.write(f'{epoch_num}\t{train_loss}\t{val_loss}\n')
 # Save accuracy and precision values to a text file
+'''
 acc_prec_txt_path = os.path.join(log_dir, 'val_accuracy_precision.txt')
 with open(acc_prec_txt_path, 'w') as f:
     f.write('Epoch\tAccuracy\tPrecision\n')
@@ -395,7 +408,7 @@ with open(tp_fp_txt_path, 'w') as f:
     for i in range(len(val_epoch_list)):
         f.write(
             f'{val_epoch_list[i]}\t{tp_history[i]:.6f}\t{fp_history[i]:.6f}\n')
-
+'''
 
 total_finish_time = (time.time() - total_start_time)  # seconds
 print('Total training time: {:.1f} hours'.format(
