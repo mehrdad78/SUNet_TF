@@ -211,10 +211,10 @@ for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
                 restored = model_restored(input_)  # ✅ raw output
 
                 # val_loss = criterion(restored, target)
-                val_weights = torch.where(target > 0.5,
-                                          torch.full_like(
-                                              target, foreground_weight),
-                                          torch.ones_like(target))
+                #val_weights = torch.where(target > 0.5,
+                                        # torch.full_like(
+                                           #   target, foreground_weight),
+                                      #    torch.ones_like(target))
 
                 #val_loss = F.binary_cross_entropy(restored, target, weight=val_weights)
                 val_loss = F.mse_loss(restored, target)
