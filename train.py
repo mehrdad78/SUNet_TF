@@ -216,20 +216,10 @@ for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
                 tar_bin = (tar > 0.5).float().cpu().numpy().flatten()
                 epoch_val_preds.extend(pred_bin)
                 epoch_val_targets.extend(tar_bin)
-        # Log epoch loss for plotting (after batch loop)
-        # loss_history.append(epoch_loss / len(train_loader))
-        # val_loss_history.append(val_epoch_loss / len(val_loader))
-        #psnr_val_rgb = torch.stack(psnr_val_rgb).mean().item()
-        #ssim_val_rgb = torch.stack(ssim_val_rgb).mean().item()
         # Log epoch loss
         loss_history.append(epoch_loss / len(train_loader))
         val_loss_history.append(val_epoch_loss / len(val_loader))
-        # psnr_val_rgb = torch.stack(psnr_val_rgb).mean().item()
-        # ssim_val_rgb = torch.stack(ssim_val_rgb).mean().item()
-        # psnr_history.append(psnr_val_rgb)
-        # ssim_history.append(ssim_val_rgb)
 
-        
         # Plot and save confusion matrix for this epoch
         cm = confusion_matrix(epoch_val_targets, epoch_val_preds)
 
@@ -286,8 +276,6 @@ for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
         plt.close()
 
         # TensorBoard logs
-        # writer.add_scalar('val/PSNR', psnr_val_rgb, epoch)
-        # writer.add_scalar('val/SSIM', ssim_val_rgb, epoch)
         writer.add_scalar('val/Accuracy', accuracy, epoch)
         writer.add_scalar('val/Precision', precision, epoch)
 
@@ -311,7 +299,6 @@ total_finish_time = (time.time() - total_start_time)  # seconds
 writer.close()
 
 # Plot training and validation loss per epoch with value labels
-# epochs_train = list(range(start_epoch, start_epoch + len(loss_history)))
 epochs_train = list(range(1, start_epoch + len(loss_history)))  # From 1 to 2
 plt.figure(figsize=(10, 6))  # بزرگ‌تر برای وضوح بیشتر
 
