@@ -151,6 +151,13 @@ for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
         for param in model_restored.parameters():
             param.grad = None
         target = data[0].cuda()
+        # 🔍 بررسی محدوده تارگت برای نرمال‌سازی
+        if target.max() > 1.5:
+            print(f"[TRAIN] Target max={target.max().item():.1f} — dividing by 255.0")
+            target = target / 255.0
+        else:
+            print(f"[TRAIN] Target already normalized (max={target.max().item():.3f})")
+
         #target = target / 255.0
         input_ = data[1].cuda()
        # if target.max() > 1:
@@ -189,7 +196,14 @@ for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
         epoch_val_targets = []
         for ii, data_val in enumerate(val_loader, 0):
             target = data_val[0].cuda()
-            #target = target / 255.0
+                                        # 🔍 بررسی محدوده تارگت برای نرمال‌سازی
+            if target.max() > 1.5:
+                print(f"[VAL] Target max={target.max().item():.1f} — dividing by 255.0")
+                target = target / 255.0
+            else:
+                print(f"[VAL] Target already normalized (max={target.max().item():.3f})")
+
+
             input_ = data_val[1].cuda()
            # if target.max() > 1:
             #    target = (target > 127).float()
