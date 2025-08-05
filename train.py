@@ -151,7 +151,7 @@ for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
         for param in model_restored.parameters():
             param.grad = None
         target = data[0].cuda()
-        target = target / 255.0
+        #target = target / 255.0
         input_ = data[1].cuda()
        # if target.max() > 1:
         #    target = (target > 127).float()
@@ -189,7 +189,7 @@ for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
         epoch_val_targets = []
         for ii, data_val in enumerate(val_loader, 0):
             target = data_val[0].cuda()
-            target = target / 255.0
+            #target = target / 255.0
             input_ = data_val[1].cuda()
            # if target.max() > 1:
             #    target = (target > 127).float()
