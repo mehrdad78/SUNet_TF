@@ -1,28 +1,25 @@
 import os
-
 import torch
 import yaml
-
-from utils import network_parameters
 import torch.nn as nn
 import torch.optim as optim
-from torch.utils.data import DataLoader
-from sklearn.metrics import precision_score, accuracy_score
-
+import matplotlib.pyplot as plt
 import torch.nn.functional as F
-from scipy.ndimage import distance_transform_edt
 import time
 import utils
 import numpy as np
 import random
 from data_RGB import get_training_data, get_validation_data
-
 from warmup_scheduler import GradualWarmupScheduler
 from tqdm import tqdm
 from tensorboardX import SummaryWriter
 from model.SUNet import SUNet_model
-import matplotlib.pyplot as plt
+from utils import network_parameters
 from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay
+from torch.utils.data import DataLoader
+from sklearn.metrics import precision_score, accuracy_score
+from scipy.ndimage import distance_transform_edt
+
 
 # Set Seeds
 torch.backends.cudnn.benchmark = True
@@ -103,7 +100,7 @@ loss_history = []
 print('==> Loading datasets')
 train_dataset = get_training_data(train_dir, {'patch_size': Train['TRAIN_PS']})
 train_loader = DataLoader(dataset=train_dataset, batch_size=OPT['BATCH'],
-                        shuffle=True, num_workers=0, drop_last=False)
+                          shuffle=True, num_workers=0, drop_last=False)
 val_dataset = get_validation_data(val_dir, {'patch_size': Train['VAL_PS']})
 val_loader = DataLoader(dataset=val_dataset, batch_size=1, shuffle=False, num_workers=0,
                         drop_last=False)
@@ -159,21 +156,17 @@ for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
         if target.shape[1] == 3:
             target = 0.2989 * target[:, 0:1] + 0.5870 * \
                 target[:, 1:2] + 0.1140 * target[:, 2:3]
-            
 
             '''restored = torch.sigmoid(model_restored(
             input_))  # Add sigmoid activation
         loss = criterion(restored, target)'''
-        
-    
+
         restored = torch.sigmoid(model_restored(input_))
         foreground_weight = 3.0
         weights = torch.where(target > 0.5,
-                      torch.full_like(target, foreground_weight),
-                      torch.ones_like(target)) 
+                              torch.full_like(target, foreground_weight),
+                              torch.ones_like(target))
         loss = F.binary_cross_entropy(restored, target, weight=weights)
-
-        
 
         # Back propagation
         loss.backward()
@@ -200,12 +193,14 @@ for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
                     target[:, 1:2] + 0.1140 * target[:, 2:3]
             with torch.no_grad():
                 restored = torch.sigmoid(model_restored(input_))
-                #val_loss = criterion(restored, target)
+                # val_loss = criterion(restored, target)
                 val_weights = torch.where(target > 0.5,
-                              torch.full_like(target, foreground_weight),
-                              torch.ones_like(target))
+                                          torch.full_like(
+                                              target, foreground_weight),
+                                          torch.ones_like(target))
 
-                val_loss = F.binary_cross_entropy(restored, target, weight=val_weights)
+                val_loss = F.binary_cross_entropy(
+                    restored, target, weight=val_weights)
             val_epoch_loss += val_loss.item()
             for res, tar in zip(restored, target):
                 psnr_val_rgb.append(utils.torchPSNR(res, tar))
@@ -307,17 +302,21 @@ train_offset = 0.01
 val_offset = 0.01
 
 # رسم Training Loss
-plt.plot(epochs_train, loss_history, marker='o', label='Training Loss', color='blue')
+plt.plot(epochs_train, loss_history, marker='o',
+         label='Training Loss', color='blue')
 for x, y in zip(epochs_train, loss_history):
-    plt.text(x, y + train_offset, f'{y:.2f}', ha='center', va='bottom', fontsize=8, color='blue')
+    plt.text(x, y + train_offset,
+             f'{y:.2f}', ha='center', va='bottom', fontsize=8, color='blue')
 
 # رسم Validation Loss (در صورت وجود)
 if val_loss_history:
     val_epochs = [start_epoch + Train['VAL_AFTER_EVERY'] - 1 + i * Train['VAL_AFTER_EVERY']
                   for i in range(len(val_loss_history))]
-    plt.plot(val_epochs, val_loss_history, marker='o', color='red', label='Validation Loss')
+    plt.plot(val_epochs, val_loss_history, marker='o',
+             color='red', label='Validation Loss')
     for x, y in zip(val_epochs, val_loss_history):
-        plt.text(x, y + val_offset, f'{y:.2f}', ha='center', va='bottom', fontsize=8, color='red')
+        plt.text(x, y + val_offset,
+                 f'{y:.2f}', ha='center', va='bottom', fontsize=8, color='red')
 
 # تنظیمات نمودار
 plt.xlabel('Epoch')
@@ -333,8 +332,10 @@ plt.show()
 plt.figure(figsize=(10, 6))  # بزرگ‌تر برای وضوح
 
 # رسم خطوط
-plt.plot(val_epoch_list, tp_history, marker='o', label='True Positive Rate (TPR) Percent', color='green')
-plt.plot(val_epoch_list, fp_history, marker='x', label='False Positive Rate (FPR) Percent', color='orange')
+plt.plot(val_epoch_list, tp_history, marker='o',
+         label='True Positive Rate (TPR) Percent', color='green')
+plt.plot(val_epoch_list, fp_history, marker='x',
+         label='False Positive Rate (FPR) Percent', color='orange')
 
 # فاصله متن‌ها
 tpr_offset = 0.03
@@ -342,11 +343,13 @@ fpr_offset = 0.07  # کمی بیشتر از TPR برای جلوگیری از ه�
 
 # لیبل‌های TPR (بالای نقطه)
 for x, y in zip(val_epoch_list, tp_history):
-    plt.text(x, y + tpr_offset, f'{y*100:.1f}', ha='center', va='bottom', fontsize=9, color='green')
+    plt.text(x, y + tpr_offset, f'{y*100:.1f}',
+             ha='center', va='bottom', fontsize=9, color='green')
 
 # لیبل‌های FPR (بالای نقطه ولی با فاصله بیشتر)
 for x, y in zip(val_epoch_list, fp_history):
-    plt.text(x, y + fpr_offset, f'{y*100:.1f}', ha='center', va='bottom', fontsize=9, color='orange')
+    plt.text(x, y + fpr_offset, f'{y*100:.1f}',
+             ha='center', va='bottom', fontsize=9, color='orange')
 
 # تنظیمات کلی نمودار
 plt.xlabel('Epoch')
@@ -358,7 +361,6 @@ plt.legend()
 plt.tight_layout()
 plt.savefig(os.path.join(log_dir, 'tpr_fpr_per_epoch_readable.png'))
 plt.show()
-
 
 
 # Save loss values to a text file
@@ -391,8 +393,8 @@ tp_fp_txt_path = os.path.join(log_dir, 'val_tpr_fpr.txt')
 with open(tp_fp_txt_path, 'w') as f:
     f.write('Epoch\tTPR\tFPR\n')
     for i in range(len(val_epoch_list)):
-        f.write(f'{val_epoch_list[i]}\t{tp_history[i]:.6f}\t{fp_history[i]:.6f}\n')
-
+        f.write(
+            f'{val_epoch_list[i]}\t{tp_history[i]:.6f}\t{fp_history[i]:.6f}\n')
 
 
 total_finish_time = (time.time() - total_start_time)  # seconds
