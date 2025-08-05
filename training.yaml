@@ -41,6 +41,3 @@ TRAINING:
   TRAIN_DIR: '/kaggle/working/train_data'       # path to training data
   VAL_DIR: '/kaggle/working/validation_data' # path to validation data
   SAVE_DIR: '/kaggle/working/checkpoints'           # path to save models and images
-
-#/kaggle/working/Cropped_Corresponding_Static/128x128
-#./datasets/Denoising_DIV2K/train
