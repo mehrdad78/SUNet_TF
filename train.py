@@ -169,7 +169,7 @@ for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
 
         #restored = torch.sigmoid(model_restored(input_))
         restored = model_restored(input_)
-        print("Restored min:", restored.min().item(), "max:", restored.max().item())
+       # print("Restored min:", restored.min().item(), "max:", restored.max().item())
 
         #foreground_weight = 3.0
         #weights = torch.where(target > 0.5,
