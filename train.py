@@ -94,7 +94,9 @@ if Train['RESUME']:
 # Loss
 
 #criterion = nn.BCELoss()
-criterion = nn.MSELoss()
+#criterion = nn.MSELoss()
+criterion = nn.L1Loss()
+
 
 loss_history = []
 
@@ -176,7 +178,9 @@ for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
          #                     torch.full_like(target, foreground_weight),
          #                     torch.ones_like(target))
         #loss = F.binary_cross_entropy(restored, target, weight=weights)
-        loss = F.mse_loss(restored, target)
+        #loss = F.mse_loss(restored, target)
+        loss = criterion(restored, target)
+
 
 
         # Back propagation
@@ -217,7 +221,9 @@ for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
                                       #    torch.ones_like(target))
 
                 #val_loss = F.binary_cross_entropy(restored, target, weight=val_weights)
-                val_loss = F.mse_loss(restored, target)
+                #val_loss = F.mse_loss(restored, target)
+                val_loss = criterion(restored, target)
+
 
             val_epoch_loss += val_loss.item()
             '''
