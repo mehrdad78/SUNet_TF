@@ -179,7 +179,21 @@ for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
          #                     torch.ones_like(target))
         #loss = F.binary_cross_entropy(restored, target, weight=weights)
         #loss = F.mse_loss(restored, target)
-        weights = torch.where(target < 0.8, 3, 1.5)
+        #weights = torch.where(target < 0.75, 3, 1.5)
+
+        # ساختن ماسک foreground
+        mask = (target < 0.5).float()  # foreground = 1, background = 0
+
+        # تعریف کرنل برای بررسی 4 همسایه
+        neighborhood_kernel = torch.tensor([[[[0, 1, 0],
+                                      [1, 0, 1],
+                                      [0, 1, 0]]]], dtype=torch.float32).to(target.device)
+
+        # شمارش تعداد همسایه‌های foreground
+        neighbor_count = F.conv2d(mask, neighborhood_kernel, padding=1)
+
+        # پیکسل‌هایی که خودشون foreground هستن و حداقل 3 همسایه foreground دارن → وزن بالا
+        weights = torch.where((mask == 1.0) & (neighbor_count >= 3), 5.0, 1.0)
         loss = F.l1_loss(restored, target,reduction='none')
         loss = (loss * weights).mean()
         
@@ -217,7 +231,14 @@ for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
             with torch.no_grad():
                 #restored = torch.sigmoid(model_restored(input_))
                 restored = model_restored(input_)  # ✅ raw output
-                val_weights  = torch.where(target < 0.8, 3, 1.5)
+                #val_weights  = torch.where(target < 0.75, 3, 1.5)
+                
+                val_mask = (target < 0.5).float()
+                val_neighbor_count = F.conv2d(val_mask, neighborhood_kernel, padding=1)
+                val_weights = torch.where((val_mask == 1.0) & (val_neighbor_count >= 3), 5.0, 1.0)
+
+
+
                 val_loss_map  = F.l1_loss(restored, target,reduction='none')
                 val_loss = (loss * weights).mean()
                 
