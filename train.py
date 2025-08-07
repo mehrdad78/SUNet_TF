@@ -179,7 +179,7 @@ for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
          #                     torch.ones_like(target))
         #loss = F.binary_cross_entropy(restored, target, weight=weights)
         #loss = F.mse_loss(restored, target)
-        weights = torch.where(target < 0.6, 3.5, 1.0)
+        weights = torch.where(target < 0.6, 3.5, 1.5)
         loss = F.l1_loss(restored, target,reduction='none')
         loss = (loss * weights).mean()
         
@@ -227,7 +227,7 @@ for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
                 #val_loss = F.binary_cross_entropy(restored, target, weight=val_weights)
                 #val_loss = F.mse_loss(restored, target)
                 #val_loss = criterion(restored, target)
-                val_weights  = torch.where(target < 0.6, 3.5, 1.0)
+                val_weights  = torch.where(target < 0.6, 3.5, 1.5)
                 val_loss_map  = F.l1_loss(restored, target,reduction='none')
                 val_loss = (loss * weights).mean()
 
