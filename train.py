@@ -217,7 +217,10 @@ for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
             with torch.no_grad():
                 #restored = torch.sigmoid(model_restored(input_))
                 restored = model_restored(input_)  # ✅ raw output
-
+                val_weights  = torch.where(target < 0.6, 3.5, 1.5)
+                val_loss_map  = F.l1_loss(restored, target,reduction='none')
+                val_loss = (loss * weights).mean()
+                
                 # val_loss = criterion(restored, target)
                 #val_weights = torch.where(target > 0.5,
                                         # torch.full_like(
@@ -227,9 +230,7 @@ for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
                 #val_loss = F.binary_cross_entropy(restored, target, weight=val_weights)
                 #val_loss = F.mse_loss(restored, target)
                 #val_loss = criterion(restored, target)
-                val_weights  = torch.where(target < 0.6, 3.5, 1.5)
-                val_loss_map  = F.l1_loss(restored, target,reduction='none')
-                val_loss = (loss * weights).mean()
+               
 
 
             val_epoch_loss += val_loss.item()
@@ -311,7 +312,7 @@ for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
 
     print("------------------------------------------------------------------")
     print("Epoch: {}\tTime: {:.4f}\tLoss: {:.4f}\tLearningRate {:.6f}".format(epoch, time.time() - epoch_start_time,
-                                                                              epoch_loss, scheduler.get_lr()[0]))
+                                                                              epoch_loss, scheduler.get_last_lr()[0]))
     print("------------------------------------------------------------------")
 
     # Save the last model
