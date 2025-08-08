@@ -346,7 +346,7 @@ for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
                 }, os.path.join(model_dir, "model_latest.pth"))
 
     writer.add_scalar('train/loss', epoch_loss, epoch)
-    writer.add_scalar('train/lr', scheduler.get_lr()[0], epoch)
+    writer.add_scalar('train/lr', scheduler.get_last_lr()[0], epoch)
 total_finish_time = (time.time() - total_start_time)  # seconds
 
 writer.close()
