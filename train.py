@@ -140,13 +140,17 @@ all_val_preds = []
 all_val_targets = []
 tp_history = []
 fp_history = []
+# قبل از حلقه‌های training/validation
+neighborhood_kernel = torch.tensor([[[[0,1,0],
+                                      [1,0,1],
+                                      [0,1,0]]]], dtype=torch.float32)
 
 
 for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
     epoch_start_time = time.time()
     epoch_loss = 0
     train_id = 1
-
+    neighborhood_kernel = neighborhood_kernel.to(target.device)
     model_restored.train()
     for i, data in enumerate(tqdm(train_loader), 0):
         # Forward propagation
@@ -158,6 +162,8 @@ for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
 
         #target = target / 255.0
         input_ = data[1].cuda()
+        neighborhood_kernel = neighborhood_kernel.to(target.device)
+
        # if target.max() > 1:
         #    target = (target > 127).float()
         # Convert target to grayscale if it is RGB
@@ -170,7 +176,7 @@ for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
         loss = criterion(restored, target)'''
 
         #restored = torch.sigmoid(model_restored(input_))
-        restored = model_restored(input_)
+        restored = model_restored(input_).clamp(0, 1)
        # print("Restored min:", restored.min().item(), "max:", restored.max().item())
 
         #foreground_weight = 3.0
@@ -180,15 +186,10 @@ for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
         #loss = F.binary_cross_entropy(restored, target, weight=weights)
         #loss = F.mse_loss(restored, target)
         #weights = torch.where(target < 0.75, 3, 1.5)
-
+        target = target / 255.0
         # ساختن ماسک foreground
         mask = (target < 0.5).float()  # foreground = 1, background = 0
-
-        # تعریف کرنل برای بررسی 4 همسایه
-        neighborhood_kernel = torch.tensor([[[[0, 1, 0],
-                                      [1, 0, 1],
-                                      [0, 1, 0]]]], dtype=torch.float32).to(target.device)
-
+        
         # شمارش تعداد همسایه‌های foreground
         neighbor_count = F.conv2d(mask, neighborhood_kernel, padding=1)
 
@@ -205,6 +206,12 @@ for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
         loss.backward()
         optimizer.step()
         epoch_loss += loss.item()
+    # قبل از شروع حلقه‌ها (یه بار)
+    neighborhood_kernel = torch.tensor(
+    [[[[0,1,0],
+       [1,0,1],
+       [0,1,0]]]], dtype=torch.float32, device=device_ids and torch.device('cuda') or torch.device('cpu')
+        )
 
     # Evaluation (Validation)
     if epoch % Train['VAL_AFTER_EVERY'] == 0:
@@ -230,17 +237,14 @@ for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
                     target[:, 1:2] + 0.1140 * target[:, 2:3]
             with torch.no_grad():
                 #restored = torch.sigmoid(model_restored(input_))
-                restored = model_restored(input_)  # ✅ raw output
+                restored = model_restored(input_).clamp(0, 1)  # ✅ raw output
                 #val_weights  = torch.where(target < 0.75, 3, 1.5)
-                
+                target = target / 255.0
                 val_mask = (target < 0.5).float()
                 val_neighbor_count = F.conv2d(val_mask, neighborhood_kernel, padding=1)
                 val_weights = torch.where((val_mask == 1.0) & (val_neighbor_count >= 3), 5.0, 1.0)
-
-
-
-                val_loss_map  = F.l1_loss(restored, target,reduction='none')
-                val_loss = (loss * weights).mean()
+                val_loss_map = F.l1_loss(restored, target, reduction='none')
+                val_loss = (val_loss_map * val_weights).mean()
                 
                 # val_loss = criterion(restored, target)
                 #val_weights = torch.where(target > 0.5,
