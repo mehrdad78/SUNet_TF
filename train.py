@@ -95,7 +95,7 @@ if Train['RESUME']:
 
     for i in range(1, start_epoch):
         scheduler.step()
-    new_lr = scheduler.get_lr()[0]
+    new_lr = scheduler.get_last_lr()[0]
     print('------------------------------------------------------------------')
     print("==> Resuming Training with learning rate:", new_lr)
     print('------------------------------------------------------------------')
@@ -192,15 +192,12 @@ for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
         #weights = torch.where(target < 0.75, 3, 1.5)
         #target = target / 255.0
         # ساختن ماسک foreground
-        mask = (target < 0.5).float()  # foreground = 1, background = 0
-        
-        # شمارش تعداد همسایه‌های foreground
-        neighbor_count = F.conv2d(mask, neighborhood_kernel, padding=1)
 
-        # پیکسل‌هایی که خودشون foreground هستن و حداقل 3 همسایه foreground دارن → وزن بالا
-        weights = torch.where((mask == 1.0) & (neighbor_count >= 3), 5.0, 1.0)
-        loss = F.l1_loss(restored, target,reduction='none')
-        loss = (loss * weights).mean()
+        mask = (target < 0.5).float()  # foreground = 1, background = 0
+        neighbor_count = F.conv2d(mask, neighborhood_kernel, padding=1)
+        weights = torch.where((mask == 1.0) & (neighbor_count >= 3), 2.0, 1.0)
+        loss_map = F.l1_loss(restored, target,reduction='none')
+        loss = (loss_map * weights).mean()
         
 
 
@@ -237,13 +234,17 @@ for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
                 target = 0.2989 * target[:, 0:1] + 0.5870 * \
                     target[:, 1:2] + 0.1140 * target[:, 2:3]
             with torch.no_grad():
-                #restored = torch.sigmoid(model_restored(input_))
+                
                 restored = torch.sigmoid(model_restored(input_))
+                if ii % 50 == 0:
+                    print("tgt[min,max,mean]=", float(target.min()), float(target.max()), float(target.mean()),
+              "pred_mean=", float(restored.mean()),
+              "fg_ratio=", float((target < 0.5).float().mean()))
                 #val_weights  = torch.where(target < 0.75, 3, 1.5)
                 #target = target / 255.0
                 val_mask = (target < 0.5).float()
                 val_neighbor_count = F.conv2d(val_mask, neighborhood_kernel, padding=1)
-                val_weights = torch.where((val_mask == 1.0) & (val_neighbor_count >= 3), 5.0, 1.0)
+                val_weights = torch.where((val_mask == 1.0) & (val_neighbor_count >= 3), 2.0, 1.0)
                 val_loss_map = F.l1_loss(restored, target, reduction='none')
                 val_loss = (val_loss_map * val_weights).mean()
                 
