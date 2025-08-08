@@ -185,7 +185,7 @@ for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
         #loss = F.binary_cross_entropy(restored, target, weight=weights)
         #loss = F.mse_loss(restored, target)
         #weights = torch.where(target < 0.75, 3, 1.5)
-        target = target / 255.0
+        #target = target / 255.0
         # ساختن ماسک foreground
         mask = (target < 0.5).float()  # foreground = 1, background = 0
         
@@ -238,7 +238,7 @@ for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
                 #restored = torch.sigmoid(model_restored(input_))
                 restored = model_restored(input_).clamp(0, 1)  # ✅ raw output
                 #val_weights  = torch.where(target < 0.75, 3, 1.5)
-                target = target / 255.0
+                #target = target / 255.0
                 val_mask = (target < 0.5).float()
                 val_neighbor_count = F.conv2d(val_mask, neighborhood_kernel, padding=1)
                 val_weights = torch.where((val_mask == 1.0) & (val_neighbor_count >= 3), 5.0, 1.0)
