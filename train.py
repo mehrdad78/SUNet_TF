@@ -196,7 +196,7 @@ for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
         mask = (target < 0.5).float()  # foreground = 1, background = 0
         neighbor_count = F.conv2d(mask, neighborhood_kernel, padding=1)
         fg_ratio = mask.mean()  # ~0.1..0.15 تو لاگ‌هات
-        w_fg = ((1 - fg_ratio) / (fg_ratio + 1e-6)).clamp(2.0, 12.0)  # وزن پویا برای FG
+        w_fg = ((1 - fg_ratio) / (fg_ratio + 1e-6)).clamp(1.5, 6.0)  # وزن پویا برای FG
         base_weights = torch.where(mask == 1.0, w_fg, torch.tensor(1.0, device=mask.device))
 
 # تقویت ملایم با همسایگی (اختیاری)
@@ -253,7 +253,8 @@ for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
                 val_mask = (target < 0.5).float()
                 val_neighbor_count = F.conv2d(val_mask, neighborhood_kernel, padding=1)
                 fg_ratio = val_mask.mean()
-                w_fg = ((1 - fg_ratio) / (fg_ratio + 1e-6)).clamp(2.0, 12.0)
+                w_fg = ((1 - fg_ratio) / (fg_ratio + 1e-6)).clamp(1.5, 6.0)
+
                 base_weights = torch.where(val_mask == 1.0, w_fg, torch.tensor(1.0, device=val_mask.device))
                 boost = torch.where((val_mask == 1.0) & (val_neighbor_count >= 3), 1.3, 1.0)
                 val_weights = base_weights * boost
