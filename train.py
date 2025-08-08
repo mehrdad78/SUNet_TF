@@ -163,9 +163,7 @@ for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
     train_id = 1
     model_restored.train()
     for i, data in enumerate(tqdm(train_loader), 0):
-        if i == 0 and epoch == start_epoch:
-            print("debug: head.bias mean =", float(head.bias.mean()) if getattr(head,"bias",None) is not None else None)
-            print("debug: restored[min,max,mean] =", float(restored.min()), float(restored.max()), float(restored.mean()))
+        
 
         # Forward propagation
         optimizer.zero_grad(set_to_none=True)
@@ -192,7 +190,9 @@ for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
         optimizer.step()
         epoch_loss += loss.item()
     # قبل از شروع حلقه‌ها (یه بار)
-
+        if i == 0 and epoch == start_epoch:
+            print("debug: head.bias mean =", float(head.bias.mean()) if getattr(head,"bias",None) is not None else None)
+            print("debug: restored[min,max,mean] =", float(restored.min()), float(restored.max()), float(restored.mean()))
 
     # Evaluation (Validation)
     if epoch % Train['VAL_AFTER_EVERY'] == 0:
