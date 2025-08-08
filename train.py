@@ -150,7 +150,6 @@ for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
     epoch_start_time = time.time()
     epoch_loss = 0
     train_id = 1
-    neighborhood_kernel = neighborhood_kernel.to(target.device)
     model_restored.train()
     for i, data in enumerate(tqdm(train_loader), 0):
         # Forward propagation
