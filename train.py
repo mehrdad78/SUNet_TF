@@ -39,6 +39,15 @@ print('==> Build the model')
 model_restored = SUNet_model(opt)
 p_number = network_parameters(model_restored)
 model_restored.cuda()
+device = next(model_restored.parameters()).device
+neighborhood_kernel = torch.tensor(
+    [[[[0,1,0],
+       [1,0,1],
+       [0,1,0]]]], dtype=torch.float32, device=device, requires_grad=False
+)
+
+# بعد از model_restored.cuda() و قبل از حلقه‌ها:
+
 
 # Training model path direction
 mode = opt['MODEL']['MODE']
@@ -141,10 +150,6 @@ all_val_targets = []
 tp_history = []
 fp_history = []
 # قبل از حلقه‌های training/validation
-neighborhood_kernel = torch.tensor([[[[0,1,0],
-                                      [1,0,1],
-                                      [0,1,0]]]], dtype=torch.float32)
-
 
 for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
     epoch_start_time = time.time()
@@ -153,15 +158,14 @@ for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
     model_restored.train()
     for i, data in enumerate(tqdm(train_loader), 0):
         # Forward propagation
-        for param in model_restored.parameters():
-            param.grad = None
-        target = data[0].cuda()
-        # 🔍 بررسی محدوده تارگت برای نرمال‌سازی
-       
+        optimizer.zero_grad(set_to_none=True)
 
-        #target = target / 255.0
+        target = data[0].cuda().float()  # Convert target to float
+        # 🔍 بررسی محدوده تارگت برای نرمال‌سازی
         input_ = data[1].cuda()
-        neighborhood_kernel = neighborhood_kernel.to(target.device)
+        if target.max() > 1.5:   # یعنی احتمالا 0..255 است
+                target = target / 255.0
+
 
        # if target.max() > 1:
         #    target = (target > 127).float()
@@ -175,7 +179,8 @@ for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
         loss = criterion(restored, target)'''
 
         #restored = torch.sigmoid(model_restored(input_))
-        restored = model_restored(input_).clamp(0, 1)
+        restored = torch.sigmoid(model_restored(input_))
+
        # print("Restored min:", restored.min().item(), "max:", restored.max().item())
 
         #foreground_weight = 3.0
@@ -206,11 +211,7 @@ for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
         optimizer.step()
         epoch_loss += loss.item()
     # قبل از شروع حلقه‌ها (یه بار)
-    neighborhood_kernel = torch.tensor(
-    [[[[0,1,0],
-       [1,0,1],
-       [0,1,0]]]], dtype=torch.float32, device=device_ids and torch.device('cuda') or torch.device('cpu')
-        )
+
 
     # Evaluation (Validation)
     if epoch % Train['VAL_AFTER_EVERY'] == 0:
@@ -221,12 +222,13 @@ for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
         epoch_val_preds = []
         epoch_val_targets = []
         for ii, data_val in enumerate(val_loader, 0):
-            target = data_val[0].cuda()
-                                        # 🔍 بررسی محدوده تارگت برای نرمال‌سازی
-          
-
-
+            target = data_val[0].cuda().float()                           # 🔍 بررسی محدوده تارگت برای نرمال‌سازی
             input_ = data_val[1].cuda()
+            
+            if target.max() > 1.5:   # یعنی احتمالا 0..255 است
+                target = target / 255.0
+
+
            # if target.max() > 1:
             #    target = (target > 127).float()
 
@@ -236,7 +238,7 @@ for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
                     target[:, 1:2] + 0.1140 * target[:, 2:3]
             with torch.no_grad():
                 #restored = torch.sigmoid(model_restored(input_))
-                restored = model_restored(input_).clamp(0, 1)  # ✅ raw output
+                restored = torch.sigmoid(model_restored(input_))
                 #val_weights  = torch.where(target < 0.75, 3, 1.5)
                 #target = target / 255.0
                 val_mask = (target < 0.5).float()
