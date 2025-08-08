@@ -145,9 +145,9 @@ all_val_preds = []
 all_val_targets = []
 tp_history = []
 fp_history = []
-WARMUP_EPOCHS = 2   # 1 یا 2 اپوک اول بدون وزن
-FG_T = 0.25         # آستانه تیره؛ 0.25 بهتر از 0.30 برای سفید کردن خاکستری‌ها
-FG_WEIGHT = 3.0 
+WARMUP_EPOCHS = 0   # 1 یا 2 اپوک اول بدون وزن
+FG_T = 0.3         # آستانه تیره؛ 0.25 بهتر از 0.30 برای سفید کردن خاکستری‌ها
+FG_WEIGHT = 5.0 
 
 for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
     epoch_start_time = time.time()
@@ -170,17 +170,11 @@ for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
      
         target = torch.where(target < FG_T, torch.zeros_like(target), torch.ones_like(target))
 
-        restored = torch.sigmoid(model_restored(input_))
-
+        restored = torch.sigmoid(model_restored(input_)).clamp(1e-4, 1-1e-4)
         mask = (target == 0).float()
-        weights = torch.where(mask == 1.0, 5.0, 1.0)
-        if epoch <= WARMUP_EPOCHS:
-    # 👶 اپوک‌های اول بدون وزن تا مدل از سیاهی کامل خارج شود
-            loss = F.l1_loss(restored, target)
-        else:
-            loss_map = F.l1_loss(restored, target, reduction='none')
-            loss = (loss_map * weights).mean()
-
+        weights = torch.where(mask == 1.0, FG_WEIGHT, 1.0)   # FG_WEIGHT رو پایین تنظیم می‌کنیم
+        loss_map = F.l1_loss(restored, target, reduction='none')
+        loss = (loss_map * weights).mean()
         # Back propagation
         loss.backward()
         optimizer.step()
