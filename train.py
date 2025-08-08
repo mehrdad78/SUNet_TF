@@ -185,7 +185,7 @@ for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
          #                     torch.ones_like(target))
         #loss = F.binary_cross_entropy(restored, target, weight=weights)
         #loss = F.mse_loss(restored, target)
-        weights = torch.where(target < 0.7, 3, 1.5)
+        weights = torch.where(target < 0.6, 3.5, 2)
         loss = charbonnier_loss(restored, target, weight=weights, eps=1e-3)
         
         # Back propagation
@@ -218,7 +218,7 @@ for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
             with torch.no_grad():
                 #restored = torch.sigmoid(model_restored(input_))
                 restored = model_restored(input_)  # ✅ raw output
-                val_weights  = torch.where(target < 0.65, 3.5, 1.5)
+                val_weights  = torch.where(target < 0.6, 3.5, 2)
                 val_loss = charbonnier_loss(restored, target, weight=val_weights, eps=1e-3)
                 
                 # val_loss = criterion(restored, target)
@@ -318,7 +318,7 @@ for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
                 }, os.path.join(model_dir, "model_latest.pth"))
 
     writer.add_scalar('train/loss', epoch_loss, epoch)
-    writer.add_scalar('train/lr', scheduler.get_lr()[0], epoch)
+    writer.add_scalar('train/lr', scheduler.get_last_lr()[0], epoch)
 total_finish_time = (time.time() - total_start_time)  # seconds
 
 writer.close()
