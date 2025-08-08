@@ -40,11 +40,7 @@ model_restored = SUNet_model(opt)
 p_number = network_parameters(model_restored)
 model_restored.cuda()
 device = next(model_restored.parameters()).device
-neighborhood_kernel = torch.tensor(
-    [[[[0,1,0],
-       [1,0,1],
-       [0,1,0]]]], dtype=torch.float32, device=device, requires_grad=False
-)
+
 
 # بعد از model_restored.cuda() و قبل از حلقه‌ها:
 
@@ -166,50 +162,20 @@ for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
         if target.max() > 1.5:   # یعنی احتمالا 0..255 است
                 target = target / 255.0
 
-
-       # if target.max() > 1:
-        #    target = (target > 127).float()
-        # Convert target to grayscale if it is RGB
-        if target.shape[1] == 3:
-            target = 0.2989 * target[:, 0:1] + 0.5870 * \
-                target[:, 1:2] + 0.1140 * target[:, 2:3]
-
-            '''restored = torch.sigmoid(model_restored(
-            input_))  # Add sigmoid activation
-        loss = criterion(restored, target)'''
+        target = torch.where(target < FG_T, torch.zeros_like(target), torch.ones_like(target))
 
         #restored = torch.sigmoid(model_restored(input_))
         restored = torch.sigmoid(model_restored(input_))
-
-       # print("Restored min:", restored.min().item(), "max:", restored.max().item())
-
-        #foreground_weight = 3.0
-        #weights = torch.where(target > 0.5,
-         #                     torch.full_like(target, foreground_weight),
-         #                     torch.ones_like(target))
-        #loss = F.binary_cross_entropy(restored, target, weight=weights)
-        #loss = F.mse_loss(restored, target)
-        #weights = torch.where(target < 0.75, 3, 1.5)
-        #target = target / 255.0
-        # ساختن ماسک foreground
-
-        mask = (target > 0.5).float()  # foreground = 1, background = 0
-        neighbor_count = F.conv2d(mask, neighborhood_kernel, padding=1)
-        fg_ratio = mask.mean()  # ~0.1..0.15 تو لاگ‌هات
-        w_fg = ((1 - fg_ratio) / (fg_ratio + 1e-6)).clamp(1.5, 6.0)  # وزن پویا برای FG
-        base_weights = torch.where(mask == 1.0, w_fg, torch.tensor(1.0, device=mask.device))
-
-# تقویت ملایم با همسایگی (اختیاری)
-        boost = torch.where((mask == 1.0) & (neighbor_count >= 3), 1.3, 1.0)
-        weights = base_weights * boost
-
+        FG_T = 0.30  # آستانه‌ی «واقعاً تیره»
+        mask = (target < FG_T).float()
+        weights = torch.where(mask == 1.0, 3.0, 1.0)  # FG=3, BG=1
         loss_map = F.l1_loss(restored, target, reduction='none')
         loss = (loss_map * weights).mean()
 
-        
 
-
-
+# تقویت ملایم با همسایگی (اختیاری)
+        loss_map = F.l1_loss(restored, target, reduction='none')
+        loss = (loss_map * weights).mean()
 
         # Back propagation
         loss.backward()
@@ -233,34 +199,25 @@ for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
             if target.max() > 1.5:   # یعنی احتمالا 0..255 است
                 target = target / 255.0
 
+            FG_T = 0.30 
+            target = torch.where(target < FG_T, torch.zeros_like(target), torch.ones_like(target))
 
-           # if target.max() > 1:
-            #    target = (target > 127).float()
 
-            # Convert target to grayscale if it is RGB
-            if target.shape[1] == 3:
-                target = 0.2989 * target[:, 0:1] + 0.5870 * \
-                    target[:, 1:2] + 0.1140 * target[:, 2:3]
             with torch.no_grad():
                 
                 restored = torch.sigmoid(model_restored(input_))
                 if ii % 50 == 0:
                     print("tgt[min,max,mean]=", float(target.min()), float(target.max()), float(target.mean()),
               "pred_mean=", float(restored.mean()),
-              "fg_ratio=", float((target < 0.5).float().mean()))
+              "fg_ratio=", float((target < FG_T).float().mean()))
                 #val_weights  = torch.where(target < 0.75, 3, 1.5)
                 #target = target / 255.0
-                val_mask = (target > 0.5).float()
-                val_neighbor_count = F.conv2d(val_mask, neighborhood_kernel, padding=1)
-                fg_ratio = val_mask.mean()
-                w_fg = ((1 - fg_ratio) / (fg_ratio + 1e-6)).clamp(1.5, 6.0)
-
-                base_weights = torch.where(val_mask == 1.0, w_fg, torch.tensor(1.0, device=val_mask.device))
-                boost = torch.where((val_mask == 1.0) & (val_neighbor_count >= 3), 1.3, 1.0)
-                val_weights = base_weights * boost
-
+                FG_T = 0.30
+                val_mask = (target < FG_T).float()
+                val_weights = torch.where(val_mask == 1.0, 3.0, 1.0)
                 val_loss_map = F.l1_loss(restored, target, reduction='none')
                 val_loss = (val_loss_map * val_weights).mean()
+
 
                 
                 # val_loss = criterion(restored, target)
