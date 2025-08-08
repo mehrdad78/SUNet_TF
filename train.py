@@ -39,6 +39,14 @@ print('==> Build the model')
 model_restored = SUNet_model(opt)
 p_number = network_parameters(model_restored)
 model_restored.cuda()
+# reset or nudge head bias
+with torch.no_grad():
+    head = model_restored.module.swin_unet.output if isinstance(model_restored, nn.DataParallel) \
+           else model_restored.swin_unet.output
+    if getattr(head, "bias", None) is not None:
+        head.bias.fill_(0.0)    # یا اگر می‌خوای کمی به سفید هل بدی: +0.5
+        print("head.bias mean =", float(head.bias.mean()))
+
 device = next(model_restored.parameters()).device
 
 
@@ -147,7 +155,7 @@ tp_history = []
 fp_history = []
 WARMUP_EPOCHS = 0   # 1 یا 2 اپوک اول بدون وزن
 FG_T = 0.3         # آستانه تیره؛ 0.25 بهتر از 0.30 برای سفید کردن خاکستری‌ها
-FG_WEIGHT = 5.0 
+FG_WEIGHT = 3.0 
 
 for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
     epoch_start_time = time.time()
@@ -155,6 +163,10 @@ for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
     train_id = 1
     model_restored.train()
     for i, data in enumerate(tqdm(train_loader), 0):
+        if i == 0 and epoch == start_epoch:
+            print("debug: head.bias mean =", float(head.bias.mean()) if getattr(head,"bias",None) is not None else None)
+            print("debug: restored[min,max,mean] =", float(restored.min()), float(restored.max()), float(restored.mean()))
+
         # Forward propagation
         optimizer.zero_grad(set_to_none=True)
         
@@ -170,7 +182,7 @@ for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
      
         target = torch.where(target < FG_T, torch.zeros_like(target), torch.ones_like(target))
 
-        restored = torch.sigmoid(model_restored(input_)).clamp(1e-4, 1-1e-4)
+        restored = torch.sigmoid(model_restored(input_))
         mask = (target == 0).float()
         weights = torch.where(mask == 1.0, FG_WEIGHT, 1.0)   # FG_WEIGHT رو پایین تنظیم می‌کنیم
         loss_map = F.l1_loss(restored, target, reduction='none')
