@@ -145,7 +145,9 @@ all_val_preds = []
 all_val_targets = []
 tp_history = []
 fp_history = []
-# قبل از حلقه‌های training/validation
+WARMUP_EPOCHS = 2   # 1 یا 2 اپوک اول بدون وزن
+FG_T = 0.25         # آستانه تیره؛ 0.25 بهتر از 0.30 برای سفید کردن خاکستری‌ها
+FG_WEIGHT = 3.0 
 
 for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
     epoch_start_time = time.time()
@@ -165,17 +167,19 @@ for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
         if target.shape[1] == 3:  # [B,3,H,W] → [B,1,H,W]
             target = 0.2989 * target[:,0:1] + 0.5870 * target[:,1:2] + 0.1140 * target[:,2:3]
         
-        FG_T = 0.30 
+     
         target = torch.where(target < FG_T, torch.zeros_like(target), torch.ones_like(target))
 
-        #restored = torch.sigmoid(model_restored(input_))
         restored = torch.sigmoid(model_restored(input_))
 
         mask = (target == 0).float()
-        weights = torch.where(mask == 1.0, 3.0, 1.0)
-
-        loss_map = F.l1_loss(restored, target, reduction='none')
-        loss = (loss_map * weights).mean()
+        weights = torch.where(mask == 1.0, 5.0, 1.0)
+        if epoch <= WARMUP_EPOCHS:
+    # 👶 اپوک‌های اول بدون وزن تا مدل از سیاهی کامل خارج شود
+            loss = F.l1_loss(restored, target)
+        else:
+            loss_map = F.l1_loss(restored, target, reduction='none')
+            loss = (loss_map * weights).mean()
 
         # Back propagation
         loss.backward()
@@ -202,21 +206,22 @@ for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
                     target = 0.2989 * target[:,0:1] + 0.5870 * target[:,1:2] + 0.1140 * target[:,2:3]
            
 
-            FG_T = 0.30 
+          
             target = torch.where(target < FG_T, torch.zeros_like(target), torch.ones_like(target))
 
 
             with torch.no_grad():
                 
-                restored = torch.sigmoid(model_restored(input_))
+                restored = torch.sigmoid(model_restored(input_)).clamp(1e-4, 1-1e-4)
+
                 if ii % 50 == 0:
                     print("tgt[min,max,mean]=", float(target.min()), float(target.max()), float(target.mean()),
               "pred_mean=", float(restored.mean()),
               "fg_ratio=", float((target ==0).float().mean()))
                 #val_weights  = torch.where(target < 0.75, 3, 1.5)
-                #target = target / 255.0
+            
                 val_mask = (target == 0).float()
-                val_weights = torch.where(val_mask == 1.0, 3.0, 1.0)
+                val_weights = torch.where(val_mask == 1.0, FG_WEIGHT, 1.0)
                 val_loss_map = F.l1_loss(restored, target, reduction='none')
                 val_loss = (val_loss_map * val_weights).mean()
 
