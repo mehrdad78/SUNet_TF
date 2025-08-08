@@ -161,19 +161,19 @@ for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
         input_ = data[1].cuda()
         if target.max() > 1.5:   # یعنی احتمالا 0..255 است
                 target = target / 255.0
+
+        if target.shape[1] == 3:  # [B,3,H,W] → [B,1,H,W]
+            target = 0.2989 * target[:,0:1] + 0.5870 * target[:,1:2] + 0.1140 * target[:,2:3]
+        
         FG_T = 0.30 
         target = torch.where(target < FG_T, torch.zeros_like(target), torch.ones_like(target))
 
         #restored = torch.sigmoid(model_restored(input_))
         restored = torch.sigmoid(model_restored(input_))
-        # آستانه‌ی «واقعاً تیره»
-        mask = (target < FG_T).float()
-        weights = torch.where(mask == 1.0, 3.0, 1.0)  # FG=3, BG=1
-        loss_map = F.l1_loss(restored, target, reduction='none')
-        loss = (loss_map * weights).mean()
 
+        mask = (target == 0).float()
+        weights = torch.where(mask == 1.0, 3.0, 1.0)
 
-# تقویت ملایم با همسایگی (اختیاری)
         loss_map = F.l1_loss(restored, target, reduction='none')
         loss = (loss_map * weights).mean()
 
@@ -195,9 +195,12 @@ for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
         for ii, data_val in enumerate(val_loader, 0):
             target = data_val[0].cuda().float()                           # 🔍 بررسی محدوده تارگت برای نرمال‌سازی
             input_ = data_val[1].cuda()
-            
+
             if target.max() > 1.5:   # یعنی احتمالا 0..255 است
                 target = target / 255.0
+            if target.shape[1] == 3:
+                    target = 0.2989 * target[:,0:1] + 0.5870 * target[:,1:2] + 0.1140 * target[:,2:3]
+           
 
             FG_T = 0.30 
             target = torch.where(target < FG_T, torch.zeros_like(target), torch.ones_like(target))
@@ -209,11 +212,10 @@ for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
                 if ii % 50 == 0:
                     print("tgt[min,max,mean]=", float(target.min()), float(target.max()), float(target.mean()),
               "pred_mean=", float(restored.mean()),
-              "fg_ratio=", float((target < FG_T).float().mean()))
+              "fg_ratio=", float((target ==0).float().mean()))
                 #val_weights  = torch.where(target < 0.75, 3, 1.5)
                 #target = target / 255.0
-                FG_T = 0.30
-                val_mask = (target < FG_T).float()
+                val_mask = (target == 0).float()
                 val_weights = torch.where(val_mask == 1.0, 3.0, 1.0)
                 val_loss_map = F.l1_loss(restored, target, reduction='none')
                 val_loss = (val_loss_map * val_weights).mean()
