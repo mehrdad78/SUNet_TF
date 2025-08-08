@@ -140,6 +140,16 @@ all_val_preds = []
 all_val_targets = []
 tp_history = []
 fp_history = []
+def charbonnier_loss(pred, target, weight=None, eps=1e-3, reduction='mean'):
+    diff = pred - target
+    loss = torch.sqrt(diff * diff + eps * eps)
+    if weight is not None:
+        loss = loss * weight
+    if reduction == 'mean':
+        return loss.mean()
+    elif reduction == 'sum':
+        return loss.sum()
+    return loss
 
 
 for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
@@ -165,10 +175,6 @@ for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
             target = 0.2989 * target[:, 0:1] + 0.5870 * \
                 target[:, 1:2] + 0.1140 * target[:, 2:3]
 
-            '''restored = torch.sigmoid(model_restored(
-            input_))  # Add sigmoid activation
-        loss = criterion(restored, target)'''
-
         #restored = torch.sigmoid(model_restored(input_))
         restored = model_restored(input_)
        # print("Restored min:", restored.min().item(), "max:", restored.max().item())
@@ -179,14 +185,9 @@ for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
          #                     torch.ones_like(target))
         #loss = F.binary_cross_entropy(restored, target, weight=weights)
         #loss = F.mse_loss(restored, target)
-        weights = torch.where(target < 0.7, 3.5, 1.5)
-        loss = F.l1_loss(restored, target,reduction='none')
-        loss = (loss * weights).mean()
+        weights = torch.where(target < 0.7, 3, 1.5)
+        loss = charbonnier_loss(restored, target, weight=weights, eps=1e-3)
         
-
-
-
-
         # Back propagation
         loss.backward()
         optimizer.step()
@@ -218,21 +219,16 @@ for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
                 #restored = torch.sigmoid(model_restored(input_))
                 restored = model_restored(input_)  # ✅ raw output
                 val_weights  = torch.where(target < 0.65, 3.5, 1.5)
-                val_loss_map  = F.l1_loss(restored, target,reduction='none')
-                val_loss = (loss * weights).mean()
+                val_loss = charbonnier_loss(restored, target, weight=val_weights, eps=1e-3)
                 
                 # val_loss = criterion(restored, target)
                 #val_weights = torch.where(target > 0.5,
                                         # torch.full_like(
                                            #   target, foreground_weight),
                                       #    torch.ones_like(target))
-
                 #val_loss = F.binary_cross_entropy(restored, target, weight=val_weights)
                 #val_loss = F.mse_loss(restored, target)
-                #val_loss = criterion(restored, target)
-               
-
-
+                #val_loss = criterion(restored, target)   
             val_epoch_loss += val_loss.item()
             '''
             for res, tar in zip(restored, target):
