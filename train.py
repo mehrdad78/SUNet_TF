@@ -155,18 +155,18 @@ for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
     for i, data in enumerate(tqdm(train_loader), 0):
         # Forward propagation
         optimizer.zero_grad(set_to_none=True)
-
+        
         target = data[0].cuda().float()  # Convert target to float
         # 🔍 بررسی محدوده تارگت برای نرمال‌سازی
         input_ = data[1].cuda()
         if target.max() > 1.5:   # یعنی احتمالا 0..255 است
                 target = target / 255.0
-
+        FG_T = 0.30 
         target = torch.where(target < FG_T, torch.zeros_like(target), torch.ones_like(target))
 
         #restored = torch.sigmoid(model_restored(input_))
         restored = torch.sigmoid(model_restored(input_))
-        FG_T = 0.30  # آستانه‌ی «واقعاً تیره»
+        # آستانه‌ی «واقعاً تیره»
         mask = (target < FG_T).float()
         weights = torch.where(mask == 1.0, 3.0, 1.0)  # FG=3, BG=1
         loss_map = F.l1_loss(restored, target, reduction='none')
