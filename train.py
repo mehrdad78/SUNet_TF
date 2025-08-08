@@ -39,19 +39,6 @@ print('==> Build the model')
 model_restored = SUNet_model(opt)
 p_number = network_parameters(model_restored)
 model_restored.cuda()
-# reset or nudge head bias
-with torch.no_grad():
-    head = model_restored.module.swin_unet.output if isinstance(model_restored, nn.DataParallel) \
-           else model_restored.swin_unet.output
-    if getattr(head, "bias", None) is not None:
-        head.bias.fill_(0.0)    # یا اگر می‌خوای کمی به سفید هل بدی: +0.5
-        print("head.bias mean =", float(head.bias.mean()))
-
-device = next(model_restored.parameters()).device
-
-
-# بعد از model_restored.cuda() و قبل از حلقه‌ها:
-
 
 # Training model path direction
 mode = opt['MODEL']['MODE']
@@ -99,7 +86,7 @@ if Train['RESUME']:
 
     for i in range(1, start_epoch):
         scheduler.step()
-    new_lr = scheduler.get_last_lr()[0]
+    new_lr = scheduler.get_lr()[0]
     print('------------------------------------------------------------------')
     print("==> Resuming Training with learning rate:", new_lr)
     print('------------------------------------------------------------------')
@@ -153,38 +140,53 @@ all_val_preds = []
 all_val_targets = []
 tp_history = []
 fp_history = []
-WARMUP_EPOCHS = 0   # 1 یا 2 اپوک اول بدون وزن
-FG_T = 0.3         # آستانه تیره؛ 0.25 بهتر از 0.30 برای سفید کردن خاکستری‌ها
-FG_WEIGHT = 3.0 
+
 
 for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
     epoch_start_time = time.time()
     epoch_loss = 0
     train_id = 1
+
     model_restored.train()
     for i, data in enumerate(tqdm(train_loader), 0):
-        
-
         # Forward propagation
-        optimizer.zero_grad(set_to_none=True)
-        
-        target = data[0].cuda().float()  # Convert target to float
+        for param in model_restored.parameters():
+            param.grad = None
+        target = data[0].cuda()
         # 🔍 بررسی محدوده تارگت برای نرمال‌سازی
+       
+
+        #target = target / 255.0
         input_ = data[1].cuda()
-        if target.max() > 1.5:   # یعنی احتمالا 0..255 است
-                target = target / 255.0
+       # if target.max() > 1:
+        #    target = (target > 127).float()
+        # Convert target to grayscale if it is RGB
+        if target.shape[1] == 3:
+            target = 0.2989 * target[:, 0:1] + 0.5870 * \
+                target[:, 1:2] + 0.1140 * target[:, 2:3]
 
-        if target.shape[1] == 3:  # [B,3,H,W] → [B,1,H,W]
-            target = 0.2989 * target[:,0:1] + 0.5870 * target[:,1:2] + 0.1140 * target[:,2:3]
+            '''restored = torch.sigmoid(model_restored(
+            input_))  # Add sigmoid activation
+        loss = criterion(restored, target)'''
+
+        #restored = torch.sigmoid(model_restored(input_))
+        restored = model_restored(input_)
+       # print("Restored min:", restored.min().item(), "max:", restored.max().item())
+
+        #foreground_weight = 3.0
+        #weights = torch.where(target > 0.5,
+         #                     torch.full_like(target, foreground_weight),
+         #                     torch.ones_like(target))
+        #loss = F.binary_cross_entropy(restored, target, weight=weights)
+        #loss = F.mse_loss(restored, target)
+        weights = torch.where(target < 0.7, 3.5, 1.5)
+        loss = F.l1_loss(restored, target,reduction='none')
+        loss = (loss * weights).mean()
         
-     
-        target = torch.where(target < FG_T, torch.zeros_like(target), torch.ones_like(target))
 
-        restored = torch.sigmoid(model_restored(input_))
-        mask = (target == 0).float()
-        weights = torch.where(mask == 1.0, FG_WEIGHT, 1.0)   # FG_WEIGHT رو پایین تنظیم می‌کنیم
-        loss_map = F.l1_loss(restored, target, reduction='none')
-        loss = (loss_map * weights).mean()
+
+
+
         # Back propagation
         loss.backward()
         optimizer.step()
@@ -199,35 +201,25 @@ for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
         epoch_val_preds = []
         epoch_val_targets = []
         for ii, data_val in enumerate(val_loader, 0):
-            target = data_val[0].cuda().float()                           # 🔍 بررسی محدوده تارگت برای نرمال‌سازی
-            input_ = data_val[1].cuda()
-
-            if target.max() > 1.5:   # یعنی احتمالا 0..255 است
-                target = target / 255.0
-            if target.shape[1] == 3:
-                    target = 0.2989 * target[:,0:1] + 0.5870 * target[:,1:2] + 0.1140 * target[:,2:3]
-           
-
+            target = data_val[0].cuda()
+                                        # 🔍 بررسی محدوده تارگت برای نرمال‌سازی
           
-            target = torch.where(target < FG_T, torch.zeros_like(target), torch.ones_like(target))
 
 
+            input_ = data_val[1].cuda()
+           # if target.max() > 1:
+            #    target = (target > 127).float()
+
+            # Convert target to grayscale if it is RGB
+            if target.shape[1] == 3:
+                target = 0.2989 * target[:, 0:1] + 0.5870 * \
+                    target[:, 1:2] + 0.1140 * target[:, 2:3]
             with torch.no_grad():
-                
-                restored = torch.sigmoid(model_restored(input_)).clamp(1e-4, 1-1e-4)
-
-                if ii % 50 == 0:
-                    print("tgt[min,max,mean]=", float(target.min()), float(target.max()), float(target.mean()),
-              "pred_mean=", float(restored.mean()),
-              "fg_ratio=", float((target ==0).float().mean()))
-                #val_weights  = torch.where(target < 0.75, 3, 1.5)
-            
-                val_mask = (target == 0).float()
-                val_weights = torch.where(val_mask == 1.0, FG_WEIGHT, 1.0)
-                val_loss_map = F.l1_loss(restored, target, reduction='none')
-                val_loss = (val_loss_map * val_weights).mean()
-
-
+                #restored = torch.sigmoid(model_restored(input_))
+                restored = model_restored(input_)  # ✅ raw output
+                val_weights  = torch.where(target < 0.65, 3.5, 1.5)
+                val_loss_map  = F.l1_loss(restored, target,reduction='none')
+                val_loss = (loss * weights).mean()
                 
                 # val_loss = criterion(restored, target)
                 #val_weights = torch.where(target > 0.5,
@@ -330,7 +322,7 @@ for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
                 }, os.path.join(model_dir, "model_latest.pth"))
 
     writer.add_scalar('train/loss', epoch_loss, epoch)
-    writer.add_scalar('train/lr', scheduler.get_last_lr()[0], epoch)
+    writer.add_scalar('train/lr', scheduler.get_lr()[0], epoch)
 total_finish_time = (time.time() - total_start_time)  # seconds
 
 writer.close()
