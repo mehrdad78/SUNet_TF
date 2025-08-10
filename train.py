@@ -145,7 +145,7 @@ def charbonnier_loss(pred, target, weight=None, eps=1e-3, reduction='mean'):
         return loss.sum()
     return loss
 
-
+'''
 @torch.no_grad()
 def dilate_binary_torch(bin_img: torch.Tensor, k: int):
 
@@ -198,6 +198,29 @@ def make_weight_matrix_torch(
             weights = torch.where((ring > 0.5) & not_fg, rw, weights)
 
     return weights
+'''
+
+from scipy.ndimage import binary_dilation
+
+# نسخه numpy → برای پردازش CPU
+def background_adjacent_to_foreground_np(binary_image, k):
+    prev_mask = binary_image.astype(np.uint8)
+    neigh_masks = []
+    for _ in range(k+1):
+        dilated_foreground = binary_dilation(prev_mask)
+        mask = np.array(dilated_foreground, dtype=np.uint8) - prev_mask
+        neigh_masks.append(mask.astype(bool))
+        prev_mask = dilated_foreground.astype(np.uint8)
+    return neigh_masks
+
+def make_weight_matrix_np(binary_image, masks, stroke_w=3, masks_w=[3, 2, 1]):
+    h, w = binary_image.shape
+    weights = np.ones((h, w), dtype=np.float32) * 0
+    weights[binary_image == 1] = stroke_w
+    for i, mask in enumerate(masks):
+        weights[mask] = masks_w[i]
+    return weights
+
 
 for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
     epoch_start_time = time.time()
@@ -225,16 +248,11 @@ for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
         #restored = torch.sigmoid(model_restored(input_))
         restored = model_restored(input_)
 
-        target_bin = (target > 0.5).float()
+        bin_img = (target > 0.5).cpu().numpy()[0, 0]
+        masks = background_adjacent_to_foreground_np(bin_img, k=2)
+        weights_np = make_weight_matrix_np(bin_img, masks, stroke_w=3, masks_w=[3, 2, 1])
 
-        weights = make_weight_matrix_torch(
-        target_bin, 
-            k=2, 
-            stroke_w=3.5,           # معادل وزن قبلی برای foreground
-            ring_weights=(3.0,2.5), # بین foreground و background قرار بده
-            background_w=2.0        # معادل وزن قبلی برای پس‌زمینه
-            )
-        loss = charbonnier_loss(restored, target, weight=weights, eps=1e-3)
+        loss = charbonnier_loss(restored, target, weight=weights_np, eps=1e-3)
         
         # Back propagation
         loss.backward()
@@ -251,13 +269,8 @@ for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
         epoch_val_targets = []
         for ii, data_val in enumerate(val_loader, 0):
             target = data_val[0].cuda()
-                                        # 🔍 بررسی محدوده تارگت برای نرمال‌سازی
-          
-
-
+                                        
             input_ = data_val[1].cuda()
-           # if target.max() > 1:
-            #    target = (target > 127).float()
 
             # Convert target to grayscale if it is RGB
             if target.shape[1] == 3:
@@ -268,14 +281,10 @@ for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
             with torch.no_grad():
                 #restored = torch.sigmoid(model_restored(input_))
                 restored = model_restored(input_)  # ✅ raw output
-                val_weights = make_weight_matrix_torch(
-                    target_bin, 
-                    k=4, 
-                    stroke_w=3.5,           # معادل وزن قبلی برای foreground
-                    ring_weights=(3.0,2.5), # بین foreground و background قرار بده
-                    background_w=1.5        # معادل وزن قبلی برای پس‌زمینه
-                        )
-                val_loss = charbonnier_loss(restored, target, weight=val_weights, eps=1e-3)
+                val_bin_img = (target > 0.5).cpu().numpy()[0, 0]
+                val_masks = background_adjacent_to_foreground_np(bin_img, k=2)
+                val_weights_np = make_weight_matrix_np(bin_img, val_masks, stroke_w=3, masks_w=[3, 2, 1])
+                val_loss = charbonnier_loss(restored, target, weight=val_weights_np, eps=1e-3)
 
             val_epoch_loss += val_loss.item()
             '''
