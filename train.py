@@ -148,13 +148,7 @@ def charbonnier_loss(pred, target, weight=None, eps=1e-3, reduction='mean'):
 
 @torch.no_grad()
 def dilate_binary_torch(bin_img: torch.Tensor, k: int):
-    """
-    bin_img: (N,1,H,W) با مقادیر {0,1}
-    k: تعداد لایه‌های انبساط (0 یعنی فقط خود foreground)
-    خروجی:
-      dilations: لیست [D0..Dk] از ماسک‌های باینری (float {0,1})
-      rings: لیست [R1..Rk] که R_i = D_i - D_{i-1}
-    """
+
     assert bin_img.ndim == 4 and bin_img.shape[1] == 1, "انتظار (N,1,H,W)"
     dilations = [bin_img]
     for _ in range(k):
@@ -276,10 +270,10 @@ for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
                 restored = model_restored(input_)  # ✅ raw output
                 val_weights = make_weight_matrix_torch(
                     target_bin, 
-                    k=2, 
+                    k=4, 
                     stroke_w=3.5,           # معادل وزن قبلی برای foreground
                     ring_weights=(3.0,2.5), # بین foreground و background قرار بده
-                    background_w=2.0        # معادل وزن قبلی برای پس‌زمینه
+                    background_w=1.5        # معادل وزن قبلی برای پس‌زمینه
                         )
                 val_loss = charbonnier_loss(restored, target, weight=val_weights, eps=1e-3)
 
