@@ -282,8 +282,8 @@ for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
                 #restored = torch.sigmoid(model_restored(input_))
                 restored = model_restored(input_)  # ✅ raw output
                 val_bin_img = (target > 0.5).cpu().numpy()[0, 0]
-                val_masks = background_adjacent_to_foreground_np(bin_img, k=2)
-                val_weights_np = make_weight_matrix_np(bin_img, val_masks, stroke_w=3, masks_w=[3, 2, 1])
+                val_masks = background_adjacent_to_foreground_np(val_bin_img, k=2)
+                val_weights_np = make_weight_matrix_np(val_bin_img, val_masks, stroke_w=3, masks_w=[3, 2, 1])
                 val_loss = charbonnier_loss(restored, target, weight=val_weights_np, eps=1e-3)
 
             val_epoch_loss += val_loss.item()
