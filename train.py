@@ -134,12 +134,14 @@ all_val_preds = []
 all_val_targets = []
 tp_history = []
 fp_history = []
+
 def charbonnier_loss(pred, target, weight=None, eps=1e-3):
     diff = pred - target
     l = torch.sqrt(diff * diff + eps * eps)
     if weight is None:
         return l.mean()
     return (l * weight).sum() / weight.sum().clamp(min=1e-8)
+
 
 '''
 def charbonnier_loss(pred, target, weight=None, eps=1e-3, reduction='mean'):
@@ -154,25 +156,89 @@ def charbonnier_loss(pred, target, weight=None, eps=1e-3, reduction='mean'):
     return loss
 '''
 
-from scipy.ndimage import binary_dilation
 
-def background_adjacent_to_foreground(binary_image, k):
-    prev_mask = binary_image
+from skimage.morphology import binary_dilation
+
+
+def background_adjacent_to_foreground(binary_image, k, footprint=None):
+    """
+    binary_image: (H,W) uint8/bool (0/1)
+    k: number of dilation *steps*
+    RETURNS: list of ring masks. 
+      - If you want EXACTLY k rings, loop range(k).
+      - If you prefer your original behavior (k+1 rings), loop range(k+1).
+    """
+    if footprint is None:
+        footprint = np.ones((3, 3), dtype=bool)  # 8-neighborhood
+
+    prev = (binary_image > 0).astype(np.uint8)
     neigh_masks = []
-    for _ in range(0, k+1):
-        dilated_foreground = np.array(binary_dilation(prev_mask), dtype=np.uint8)
-        neigh_masks.append(np.array(dilated_foreground - prev_mask, dtype=bool))
-        prev_mask = dilated_foreground
+    for _ in range(k):  # <- change to range(k+1) if you want k+1 rings (your original)
+        dil = binary_dilation(prev.astype(bool), footprint=footprint).astype(np.uint8)
+        ring = (dil - prev).astype(bool)
+        neigh_masks.append(ring)
+        prev = dil
     return neigh_masks
 
-def make_weight_matrix(binary_image, masks, stroke_w=3, masks_w=[3, 2, 1]):
+def make_weight_matrix(binary_image, masks, stroke_w=3.0, masks_w=(3.0, 2.0, 1.0), bg_min=0.0):
+    """
+    weights: float32. Foreground gets stroke_w; ring i gets masks_w[i] (or last if i >= len).
+    """
     h, w = binary_image.shape
-    weights = np.zeros((h, w), dtype=np.uint8)
-    weights[binary_image == 1] = stroke_w
-    for i, mask in enumerate(masks):
-        weights[mask] = masks_w[i]
-    return weights
+    weights = np.zeros((h, w), dtype=np.float32)
+    if bg_min > 0.0:
+        weights[:] = float(bg_min)
 
+    fg = (binary_image == 1)
+    weights[fg] = float(stroke_w)
+
+    for i, mask in enumerate(masks):
+        wv = masks_w[i] if i < len(masks_w) else masks_w[-1]
+        weights[mask] = float(wv)
+    return weights
+def make_weights_from_numpy(
+    target_t: torch.Tensor,
+    k: int = 2,
+    stroke_w: float = 3.0,
+    ring_w=(3.0, 2.0, 1.0),
+    normalize_to_mean_one: bool = True,
+    bg_min: float = 0.0,  # set >0.0 if you want background to have tiny weight
+) -> torch.Tensor:
+    """
+    target_t: (B,1,H,W) torch float on GPU, binary by default (0/1).
+    returns:  (B,1,H,W) torch float on same device.
+    """
+    assert target_t.dim() == 4 and target_t.size(1) == 1, "expect (B,1,H,W)"
+    device = target_t.device
+
+    # robust binary (works for 0/1 or 0/255 just in case)
+    tgt_np = target_t.detach().cpu().numpy()
+    if tgt_np.max() <= 1.0:
+        bin_batch = (tgt_np > 0.5).astype(np.uint8)
+    else:
+        bin_batch = (tgt_np > 127).astype(np.uint8)
+
+    weights_list = []
+    B = bin_batch.shape[0]
+    for b in range(B):
+        bin_img = bin_batch[b, 0]  # (H,W)
+        masks = background_adjacent_to_foreground(bin_img, k)
+        w_np = make_weight_matrix(bin_img, masks, stroke_w=float(stroke_w), masks_w=list(ring_w)).astype(np.float32)
+        if bg_min > 0.0:
+            w_np[w_np == 0] = bg_min
+        weights_list.append(w_np[None, None, ...])  # (1,1,H,W)
+
+    w_np_batch = np.concatenate(weights_list, axis=0)  # (B,1,H,W)
+    w = torch.from_numpy(w_np_batch).to(device=device, dtype=target_t.dtype)
+
+    # handle empty-foreground patches
+    if float(w.sum()) == 0.0:
+        w.fill_(1.0)
+
+    if normalize_to_mean_one:
+        w = w / w.mean().clamp(min=1e-8)
+
+    return w
 
 '''
 @torch.no_grad()
@@ -249,24 +315,8 @@ for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
         #restored = torch.sigmoid(model_restored(input_))
         restored = model_restored(input_)
 
-        batch_weights = []
-
-        for b in range(target.size(0)):
-            # Convert one sample to NumPy binary array
-            target_np = target[b, 0].detach().cpu().numpy().astype(np.uint8)
-
-            # Build mask list
-            masks = background_adjacent_to_foreground(target_np, k=2)  # change k as needed
-
-            # Build weight matrix (NumPy)
-            weight_np = make_weight_matrix(target_np, masks, stroke_w=3, masks_w=[3, 2, 1])
-
-            # Convert to torch & keep shape (1,H,W)
-            weight_tensor = torch.from_numpy(weight_np).float().unsqueeze(0)  
-            batch_weights.append(weight_tensor)
-
             # Stack into (B,1,H,W) and move to GPU
-        weights = torch.stack(batch_weights, dim=0).to(target.device)
+        weights = make_weights_from_numpy(target, k=2, stroke_w=3.0, ring_w=(3.0,2.0,1.0))
         loss = charbonnier_loss(restored, target, weight=weights, eps=1e-3)
         
         # Back propagation
@@ -302,19 +352,9 @@ for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
                 #restored = torch.sigmoid(model_restored(input_))
                 restored = model_restored(input_)
 
-            batch_weights = []
-            for b in range(target.size(0)):
-                target_np = target[b, 0].detach().cpu().numpy().astype(np.uint8)
-                masks = background_adjacent_to_foreground(target_np, k=2)
-                weight_np = make_weight_matrix(
-                target_np, masks,
-                stroke_w=3,            # foreground weight
-                masks_w=[3, 2, 1]      # successive ring weights
-                        )
-                weight_t = torch.from_numpy(weight_np).float().unsqueeze(0)
-                batch_weights.append(weight_t)
 
-            val_weights = torch.stack(batch_weights, dim=0).to(target.device)
+
+            val_weights = make_weights_from_numpy(target, k=2, stroke_w=3.0, ring_w=(3.0, 2.0, 1.0))
 
             val_loss = charbonnier_loss(restored, target, weight=val_weights, eps=1e-3)
 
