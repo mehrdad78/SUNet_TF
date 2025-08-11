@@ -141,6 +141,13 @@ def charbonnier_loss(pred, target, weight=None, eps=1e-3):
     if weight is None:
         return l.mean()
     return (l * weight).sum() / weight.sum().clamp(min=1e-8)
+def get_last_trainable_leaf(model):
+    last_name, last_mod = None, None
+    for name, m in (model.named_modules()):
+        # leaf = no children; has parameters directly
+        if sum(1 for _ in m.children()) == 0 and any(p.requires_grad for p in m.parameters(recurse=False)):
+            last_name, last_mod = name, m
+    return last_name, last_mod
 
 
 '''
@@ -204,10 +211,7 @@ def make_weights_from_numpy(
     normalize_to_mean_one: bool = True,
     bg_min: float = 0.0,  # set >0.0 if you want background to have tiny weight
 ) -> torch.Tensor:
-    """
-    target_t: (B,1,H,W) torch float on GPU, binary by default (0/1).
-    returns:  (B,1,H,W) torch float on same device.
-    """
+
     assert target_t.dim() == 4 and target_t.size(1) == 1, "expect (B,1,H,W)"
     device = target_t.device
 
@@ -302,10 +306,7 @@ for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
         for param in model_restored.parameters():
             param.grad = None
         target = data[0].cuda()
-       
-       
 
-        #target = target / 255.0
         input_ = data[1].cuda()
 
         if target.shape[1] == 3:
@@ -426,7 +427,29 @@ for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
        # writer.add_scalar('val/Precision', precision, epoch)
 '''
     scheduler.step()
+    if epoch == 5:
+        net = model_restored.module if hasattr(model_restored, "module") else model_restored
+        lname, last = get_last_trainable_leaf(net)
+        torch.save(last.state_dict(), os.path.join(model_dir, f"last_layer_{lname}_e{epoch:03d}.pth"))
 
+    '''
+    # Save "latest" every epoch (you already have this)
+    torch.save({
+    'epoch': epoch,
+    'state_dict': (model_restored.module if hasattr(model_restored, "module") else model_restored).state_dict(),
+    'optimizer': optimizer.state_dict(),
+    'scheduler': scheduler.state_dict(),
+    }, os.path.join(model_dir, "model_latest.pth"))
+
+# Save a copy at epoch 5
+    if epoch == 5:
+        torch.save({
+        'epoch': epoch,
+        'state_dict': (model_restored.module if hasattr(model_restored, "module") else model_restored).state_dict(),
+        'optimizer': optimizer.state_dict(),
+        'scheduler': scheduler.state_dict(),
+        }, os.path.join(model_dir, f"model_epoch_{epoch:03d}.pth"))
+    '''
     print("------------------------------------------------------------------")
     print("Epoch: {}\tTime: {:.4f}\tLoss: {:.4f}\tLearningRate {:.6f}".format(epoch, time.time() - epoch_start_time,
                                                                               epoch_loss, scheduler.get_last_lr()[0]))
