@@ -134,6 +134,14 @@ all_val_preds = []
 all_val_targets = []
 tp_history = []
 fp_history = []
+def charbonnier_loss(pred, target, weight=None, eps=1e-3):
+    diff = pred - target
+    l = torch.sqrt(diff * diff + eps * eps)
+    if weight is None:
+        return l.mean()
+    return (l * weight).sum() / weight.sum().clamp(min=1e-8)
+
+'''
 def charbonnier_loss(pred, target, weight=None, eps=1e-3, reduction='mean'):
     diff = pred - target
     loss = torch.sqrt(diff * diff + eps * eps)
@@ -144,7 +152,7 @@ def charbonnier_loss(pred, target, weight=None, eps=1e-3, reduction='mean'):
     elif reduction == 'sum':
         return loss.sum()
     return loss
-
+'''
 
 from scipy.ndimage import binary_dilation
 
@@ -293,7 +301,7 @@ for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
             with torch.no_grad():
                 #restored = torch.sigmoid(model_restored(input_))
                 restored = model_restored(input_)
-                
+
             batch_weights = []
             for b in range(target.size(0)):
                 target_np = target[b, 0].detach().cpu().numpy().astype(np.uint8)
