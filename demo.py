@@ -29,6 +29,68 @@ args = parser.parse_args()
 def save_img(filepath, img):
     cv2.imwrite(filepath, cv2.cvtColor(img, cv2.COLOR_RGB2BGR))
 
+import os, torch
+
+def get_submodule_by_path(model, path_str: str):
+    # works with DataParallel/DistributedDataParallel too
+    net = model.module if hasattr(model, "module") else model
+    # torch>=1.9 has get_submodule
+    if hasattr(net, "get_submodule"):
+        return net.get_submodule(path_str)
+    # fallback: manual traversal
+    sub = net
+    for p in path_str.split('.'):
+        sub = getattr(sub, p)
+    return sub
+
+def load_full_or_state(model, ckpt_path, strict=False):
+    device = next(model.parameters()).device
+    ckpt = torch.load(ckpt_path, map_location=device)
+    # accept pure state_dict or dict with 'state_dict'
+    state = ckpt.get("state_dict", ckpt) if isinstance(ckpt, dict) else ckpt
+    # strip DataParallel prefix if present
+    if any(k.startswith("module.") for k in state.keys()):
+        state = {k.replace("module.", "", 1): v for k, v in state.items()}
+    target = model.module if hasattr(model, "module") else model
+    missing, unexpected = target.load_state_dict(state, strict=strict)
+    print("[full load] missing:", missing)
+    print("[full load] unexpected:", unexpected)
+
+def load_last_layer(model, last_layer_path, layer_path=None, strict=False):
+    """
+    last_layer_path: file saved via last.state_dict() => keys like 'weight', 'bias'
+    layer_path: dotted path to the submodule, e.g. 'swin_unet.output'
+                If None, tries to parse from filename 'last_layer_<layer_path>_e*.pth'
+    """
+    device = next(model.parameters()).device
+    small = torch.load(last_layer_path, map_location=device)
+
+    # infer layer path from filename if not given
+    if layer_path is None:
+        base = os.path.basename(last_layer_path)
+        # expects pattern: last_layer_<layer_path>_e*.pth
+        if "last_layer_" in base:
+            layer_path = base.split("last_layer_")[1].rsplit("_e", 1)[0]
+        else:
+            raise ValueError("Please provide layer_path, couldn't infer from filename.")
+
+    sub = get_submodule_by_path(model, layer_path)
+
+    # Optional: sanity check shapes
+    for k, v in small.items():
+        if not hasattr(sub, k):
+            print(f"[warn] submodule has no attr '{k}'")
+        else:
+            mparam = getattr(sub, k)
+            if hasattr(mparam, "shape") and hasattr(v, "shape") and tuple(mparam.shape) != tuple(v.shape):
+                print(f"[warn] shape mismatch for {layer_path}.{k}: "
+                      f"ckpt {tuple(v.shape)} vs model {tuple(mparam.shape)}")
+
+    missing, unexpected = sub.load_state_dict(small, strict=strict)
+    print(f"[last-layer load -> {layer_path}] missing:", missing, "| unexpected:", unexpected)
+
+
+
 def _strip_module(sd: dict) -> dict:
     if any(k.startswith("module.") for k in sd.keys()):
         return {k.replace("module.", "", 1): v for k, v in sd.items()}
