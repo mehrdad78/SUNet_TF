@@ -12,14 +12,14 @@ from warmup_scheduler import GradualWarmupScheduler
 from skimage.morphology import binary_dilation
 from sklearn.metrics import roc_auc_score, average_precision_score, roc_curve, precision_recall_curve
 
-# --- your project imports ---
+# project imports
 from model.SUNet import SUNet_model
 from data_RGB import get_training_data, get_validation_data
 import utils
 from utils import network_parameters
 
 # =========================
-# Config (you can tweak)
+# Config (tweak if needed)
 # =========================
 # Boundary-weight settings
 K_RINGS   = 2
@@ -28,9 +28,9 @@ RING_W    = (3.0, 2.0, 1.0)
 NORM_MEAN_ONE = True
 
 # Metrics settings
-COMPUTE_TRAIN_ROC = False     # set True to also compute AUROC/AUPRC on training each epoch
-VAL_AUROC_SUBSAMPLE = 0       # cap pixels per epoch (e.g., 200_000). 0 = no cap
-TRAIN_AUROC_SUBSAMPLE = 0     # same cap for training collection
+COMPUTE_TRAIN_ROC = True     # << compute AUROC/AUPRC on TRAIN split too
+VAL_AUROC_SUBSAMPLE   = 0    # cap pixels per val epoch (0 = no cap)
+TRAIN_AUROC_SUBSAMPLE = 200_000  # cap pixels per train epoch (memory saver, 0 = no cap)
 
 # =========================
 # Repro
@@ -70,7 +70,7 @@ if torch.cuda.device_count() > 1:
 if len(device_ids) > 1:
     model_restored = nn.DataParallel(model_restored, device_ids=device_ids)
 
-# Log
+# Log root
 log_dir = os.path.join(Train['SAVE_DIR'], mode, 'log')
 utils.mkdir(log_dir)
 writer = SummaryWriter(log_dir=log_dir, filename_suffix=f'_{mode}')
@@ -79,10 +79,13 @@ writer = SummaryWriter(log_dir=log_dir, filename_suffix=f'_{mode}')
 plots_root = os.path.join(log_dir, 'plots')
 loss_dir   = os.path.join(plots_root, 'loss')
 mse_dir    = os.path.join(plots_root, 'mse')
-roc_dir    = os.path.join(plots_root, 'roc')
-pr_dir     = os.path.join(plots_root, 'pr')
-overlay_dir= os.path.join(plots_root, 'overlay')
-for d in [plots_root, loss_dir, mse_dir, roc_dir, pr_dir, overlay_dir]:
+roc_val_dir= os.path.join(plots_root, 'roc', 'val')
+pr_val_dir = os.path.join(plots_root, 'pr', 'val')
+roc_tr_dir = os.path.join(plots_root, 'roc', 'train')
+pr_tr_dir  = os.path.join(plots_root, 'pr', 'train')
+overlay_val_dir = os.path.join(plots_root, 'overlay', 'val')
+overlay_tr_dir  = os.path.join(plots_root, 'overlay', 'train')
+for d in [plots_root, loss_dir, mse_dir, roc_val_dir, pr_val_dir, roc_tr_dir, pr_tr_dir, overlay_val_dir, overlay_tr_dir]:
     os.makedirs(d, exist_ok=True)
 
 # =========================
@@ -198,48 +201,13 @@ def make_weights_from_numpy(target_t, k=K_RINGS, stroke_w=STROKE_W, ring_w=RING_
         w = w / w.mean().clamp(min=1e-8)
     return w
 
-def get_last_trainable_leaf(model):
-    last_name, last_mod = None, None
-    for name, m in (model.named_modules()):
-        if sum(1 for _ in m.children()) == 0 and any(p.requires_grad for p in m.parameters(recurse=False)):
-            last_name, last_mod = name, m
-    return last_name, last_mod
-
-# =========================
-# Train!
-# =========================
-print('==> Training start: ')
-total_start_time = time.time()
-
-loss_history = []
-val_loss_history = []
-val_epoch_list = []
-
-mse_train_history = []
-mse_val_history = []
-mse_val_weighted_history = []
-
-auroc_val_history = []
-auprc_val_history = []
-
-auroc_train_history = []
-auprc_train_history = []
-
-# --- Best metrics tracking ---
-best_auroc = -1.0
-best_auprc = -1.0
-best_auroc_epoch, best_auprc_epoch = None, None
-best_auroc_path, best_auprc_path = None, None
-
-
 def _collect_scores(y_score, y_true, buf_scores, buf_trues, cap, collected_count):
     """Append scores/labels with an optional global cap to limit memory."""
     if cap <= 0:
         buf_scores.append(y_score); buf_trues.append(y_true)
         return collected_count + y_score.size
     remaining = cap - collected_count
-    if remaining <= 0:
-        return collected_count
+    if remaining <= 0: return cap
     if y_score.size > remaining:
         idx = np.random.choice(y_score.size, remaining, replace=False)
         buf_scores.append(y_score[idx]); buf_trues.append(y_true[idx])
@@ -247,6 +215,32 @@ def _collect_scores(y_score, y_true, buf_scores, buf_trues, cap, collected_count
     else:
         buf_scores.append(y_score); buf_trues.append(y_true)
         return collected_count + y_score.size
+
+# =========================
+# Histories & best trackers
+# =========================
+loss_history = []                 # train loss per epoch
+mse_train_history = []
+auroc_train_history = []
+auprc_train_history = []
+
+val_loss_history = []
+mse_val_history = []
+mse_val_weighted_history = []
+auroc_val_history = []
+auprc_val_history = []
+val_epoch_list = []
+
+best_auroc = -1.0
+best_auprc = -1.0
+best_auroc_epoch, best_auprc_epoch = None, None
+best_auroc_path, best_auprc_path = None, None
+
+# =========================
+# Train!
+# =========================
+print('==> Training start: ')
+total_start_time = time.time()
 
 for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
     epoch_start_time = time.time()
@@ -257,18 +251,20 @@ for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
     train_mse_running = 0.0
     train_mse_batches = 0
 
-    # (optional) train AUROC/AUPRC collectors
-    train_probs_list = []; train_targets_list = []; train_collected = 0
+    # train AUROC/AUPRC collectors (optional)
+    tr_probs_list, tr_targets_list = [], []
+    tr_collected = 0
+    tr_pos_total = tr_neg_total = 0
+    tr_mixed = tr_skipped = 0
 
     for i, data in enumerate(tqdm(train_loader), 0):
-        # zero grad
-        for p in model_restored.parameters():
-            p.grad = None
+        # zero grad (faster than optimizer.zero_grad())
+        for p in model_restored.parameters(): p.grad = None
 
         target = data[0].cuda()
         input_  = data[1].cuda()
 
-        if target.shape[1] == 3:
+        if target.shape[1] == 3:  # only if RGB masks
             target = 0.2989 * target[:, 0:1] + 0.5870 * target[:, 1:2] + 0.1140 * target[:, 2:3]
 
         restored = model_restored(input_)
@@ -286,30 +282,66 @@ for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
 
             if COMPUTE_TRAIN_ROC:
                 p = prob.detach().cpu().numpy().ravel()
-                t = target.detach().cpu().numpy().ravel().astype(np.uint8)
-                train_collected = _collect_scores(p, t, train_probs_list, train_targets_list,
-                                                  TRAIN_AUROC_SUBSAMPLE, train_collected)
+                t = target.detach().cpu().numpy().ravel()
+                t = (t > 0.5).astype(np.uint8) if t.max() <= 1.0 else (t > 127).astype(np.uint8)
+                pos = int(t.sum()); neg = int(t.size - pos)
+                tr_pos_total += pos; tr_neg_total += neg
+                if pos > 0 and neg > 0:
+                    tr_mixed += 1
+                    tr_collected = _collect_scores(p, t, tr_probs_list, tr_targets_list,
+                                                   TRAIN_AUROC_SUBSAMPLE, tr_collected)
+                else:
+                    tr_skipped += 1
 
         loss.backward()
         optimizer.step()
         epoch_loss += loss.item()
 
-    # Per-epoch train MSE
+    # Per-epoch train loss & MSE
+    train_loss_epoch = epoch_loss / max(1, len(train_loader))
+    loss_history.append(train_loss_epoch)
+    writer.add_scalar('train/loss_epoch', train_loss_epoch, epoch)
+
     mse_train_epoch = train_mse_running / max(1, train_mse_batches)
     mse_train_history.append(mse_train_epoch)
     writer.add_scalar('train/mse', mse_train_epoch, epoch)
 
-    # Optional train AUROC/AUPRC
-    if COMPUTE_TRAIN_ROC and len(train_targets_list):
-        y_score_tr = np.concatenate(train_probs_list); y_true_tr = np.concatenate(train_targets_list)
+    # Train AUROC/AUPRC per epoch
+    if COMPUTE_TRAIN_ROC and len(tr_targets_list):
+        y_score_tr = np.concatenate(tr_probs_list)
+        y_true_tr  = np.concatenate(tr_targets_list)
         if np.unique(y_true_tr).size == 2:
             auroc_tr = roc_auc_score(y_true_tr, y_score_tr)
             auprc_tr = average_precision_score(y_true_tr, y_score_tr)
-            auroc_train_history.append(auroc_tr); auprc_train_history.append(auprc_tr)
+            auroc_train_history.append(auroc_tr)
+            auprc_train_history.append(auprc_tr)
             writer.add_scalar('train/auroc', auroc_tr, epoch)
             writer.add_scalar('train/auprc', auprc_tr, epoch)
+
+            # ROC/PR plots for train
+            fpr, tpr, _ = roc_curve(y_true_tr, y_score_tr)
+            prec, rec, _ = precision_recall_curve(y_true_tr, y_score_tr)
+
+            plt.figure(figsize=(6,6))
+            plt.plot(fpr, tpr, label=f'AUROC={auroc_tr:.4f}')
+            plt.plot([0,1],[0,1],'--',linewidth=1)
+            plt.xlabel('FPR'); plt.ylabel('TPR'); plt.title(f'Train ROC (epoch {epoch})')
+            plt.legend(); plt.grid(True); plt.tight_layout()
+            plt.savefig(os.path.join(roc_tr_dir, f'roc_train_epoch_{epoch:03d}.png')); plt.close()
+
+            plt.figure(figsize=(6,6))
+            plt.plot(rec, prec, label=f'AP={auprc_tr:.4f}')
+            plt.xlabel('Recall'); plt.ylabel('Precision'); plt.title(f'Train PR (epoch {epoch})')
+            plt.legend(); plt.grid(True); plt.tight_layout()
+            plt.savefig(os.path.join(pr_tr_dir, f'pr_train_epoch_{epoch:03d}.png')); plt.close()
         else:
             auroc_train_history.append(np.nan); auprc_train_history.append(np.nan)
+            print(f"[train] AUROC/AUPRC undefined (no mixed-class batches) at epoch {epoch}")
+    else:
+        # keep lengths aligned
+        auroc_train_history.append(np.nan); auprc_train_history.append(np.nan)
+
+    print(f"[train@{epoch}] pos={tr_pos_total}, neg={tr_neg_total}, mixed_batches={tr_mixed}, skipped={tr_skipped}")
 
     # --- Validation ---
     if epoch % Train['VAL_AFTER_EVERY'] == 0:
@@ -320,7 +352,10 @@ for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
         val_epoch_loss = 0.0
 
         # AUROC/AUPRC collectors
-        val_probs_list = []; val_targets_list = []; val_collected = 0
+        val_probs_list, val_targets_list = [], []
+        val_collected = 0
+        pos_total = neg_total = 0
+        mixed_images = skipped_single_class = 0
 
         for ii, data_val in enumerate(val_loader, 0):
             target = data_val[0].cuda()
@@ -347,13 +382,22 @@ for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
                 val_loss = charbonnier_loss(restored, target, weight=val_weights, eps=1e-3)
                 val_epoch_loss += val_loss.item()
 
-                # collect for AUROC/AUPRC
-                p = prob.detach().cpu().numpy().ravel()
-                t = target.detach().cpu().numpy().ravel().astype(np.uint8)
-                val_collected = _collect_scores(p, t, val_probs_list, val_targets_list,
-                                                VAL_AUROC_SUBSAMPLE, val_collected)
+                # robust binarization for AUROC/AUPRC
+                t_np = target.detach().cpu().numpy().ravel()
+                t_bin = (t_np > 0.5).astype(np.uint8) if t_np.max() <= 1.0 else (t_np > 127).astype(np.uint8)
+                p_np = prob.detach().cpu().numpy().ravel()
 
-        # aggregate & log per-epoch
+                pos = int(t_bin.sum()); neg = int(t_bin.size - pos)
+                pos_total += pos; neg_total += neg
+
+                if pos > 0 and neg > 0:
+                    mixed_images += 1
+                    val_collected = _collect_scores(p_np, t_bin, val_probs_list, val_targets_list,
+                                                    VAL_AUROC_SUBSAMPLE, val_collected)
+                else:
+                    skipped_single_class += 1
+
+        # aggregate & log per-epoch (validation)
         val_mse_epoch = val_mse_running / max(1, val_mse_batches)
         mse_val_history.append(val_mse_epoch)
         writer.add_scalar('val/mse', val_mse_epoch, epoch)
@@ -362,13 +406,18 @@ for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
         mse_val_weighted_history.append(val_mse_weighted_epoch)
         writer.add_scalar('val/mse_weighted', val_mse_weighted_epoch, epoch)
 
-        val_loss_history.append(val_epoch_loss / max(1, len(val_loader)))
+        val_loss_epoch = val_epoch_loss / max(1, len(val_loader))
+        val_loss_history.append(val_loss_epoch)
         val_epoch_list.append(epoch)
 
-        # --- AUROC / AUPRC + ROC/PR plots ---
+        # AUROC / AUPRC + curves
         y_score = np.concatenate(val_probs_list) if len(val_probs_list) else np.array([])
         y_true  = np.concatenate(val_targets_list) if len(val_targets_list) else np.array([])
-        if y_true.size > 0 and np.unique(y_true).size == 2:
+        have_two_classes = (y_true.size > 0 and np.unique(y_true).size == 2)
+
+        print(f"[val@{epoch}] pos={pos_total}, neg={neg_total}, mixed_imgs={mixed_images}, skipped={skipped_single_class}")
+
+        if have_two_classes:
             auroc = roc_auc_score(y_true, y_score)
             auprc = average_precision_score(y_true, y_score)
             auroc_val_history.append(auroc); auprc_val_history.append(auprc)
@@ -378,62 +427,96 @@ for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
             fpr, tpr, _ = roc_curve(y_true, y_score)
             prec, rec, _ = precision_recall_curve(y_true, y_score)
 
-            # ROC curve image
+            # ROC curve (val)
             plt.figure(figsize=(6,6))
             plt.plot(fpr, tpr, label=f'AUROC={auroc:.4f}')
-            plt.plot([0,1], [0,1], '--', linewidth=1)
-            plt.xlabel('FPR'); plt.ylabel('TPR'); plt.title(f'ROC (epoch {epoch})')
+            plt.plot([0,1],[0,1],'--',linewidth=1)
+            plt.xlabel('FPR'); plt.ylabel('TPR'); plt.title(f'Val ROC (epoch {epoch})')
             plt.legend(); plt.grid(True); plt.tight_layout()
-            plt.savefig(os.path.join(roc_dir, f'roc_epoch_{epoch:03d}.png')); plt.close()
+            plt.savefig(os.path.join(roc_val_dir, f'roc_val_epoch_{epoch:03d}.png')); plt.close()
 
-            # PR curve image
+            # PR curve (val)
             plt.figure(figsize=(6,6))
             plt.plot(rec, prec, label=f'AP={auprc:.4f}')
-            plt.xlabel('Recall'); plt.ylabel('Precision'); plt.title(f'PR (epoch {epoch})')
+            plt.xlabel('Recall'); plt.ylabel('Precision'); plt.title(f'Val PR (epoch {epoch})')
             plt.legend(); plt.grid(True); plt.tight_layout()
-            plt.savefig(os.path.join(pr_dir, f'pr_epoch_{epoch:03d}.png')); plt.close()
+            plt.savefig(os.path.join(pr_val_dir, f'pr_val_epoch_{epoch:03d}.png')); plt.close()
+
+            # Save best-by-AUROC
+            if auroc > best_auroc:
+                best_auroc = auroc
+                best_auroc_epoch = epoch
+                best_auroc_path = os.path.join(model_dir, f"model_best_auroc_e{epoch:03d}.pth")
+                net = model_restored.module if hasattr(model_restored, "module") else model_restored
+                torch.save({'epoch': epoch,
+                            'state_dict': net.state_dict(),
+                            'optimizer': optimizer.state_dict()},
+                           best_auroc_path)
+
+            # Save best-by-AUPRC
+            if auprc > best_auprc:
+                best_auprc = auprc
+                best_auprc_epoch = epoch
+                best_auprc_path = os.path.join(model_dir, f"model_best_auprc_e{epoch:03d}.pth")
+                net = model_restored.module if hasattr(model_restored, "module") else model_restored
+                torch.save({'epoch': epoch,
+                            'state_dict': net.state_dict(),
+                            'optimizer': optimizer.state_dict()},
+                           best_auprc_path)
         else:
             auroc_val_history.append(np.nan); auprc_val_history.append(np.nan)
-            print(f"[val] AUROC/AUPRC undefined (mask had one class) at epoch {epoch}")
+            print(f"[val] AUROC/AUPRC undefined (no mixed-class masks collected) at epoch {epoch}")
 
-        # --- Overlay plot (all metrics) ---
-        # Left y-axis: AUROC & AUPRC (0-1); Right y-axis: val loss & val MSE
+        # --- Overlay (VAL): AUROC/AUPRC + Val Loss/MSE + Train Loss ---
         xs = val_epoch_list
+        train_loss_for_val = [loss_history[e - 1] for e in xs]   # epochs are 1-based
+
         plt.figure(figsize=(9,6))
-        ax1 = plt.gca()
-        ax2 = ax1.twinx()
+        ax1 = plt.gca(); ax2 = ax1.twinx()
         ax1.plot(xs, auroc_val_history, marker='o', label='Val AUROC')
         ax1.plot(xs, auprc_val_history, marker='o', label='Val AUPRC')
         ax1.set_ylim(0, 1.0); ax1.set_ylabel('AUROC / AUPRC')
         ax2.plot(xs, [val_loss_history[i] for i in range(len(xs))], marker='s', label='Val Loss')
         ax2.plot(xs, [mse_val_history[i]  for i in range(len(xs))], marker='s', label='Val MSE')
+        ax2.plot(xs, train_loss_for_val, marker='^', linestyle='--', label='Train Loss')
         ax2.set_ylabel('Loss / MSE')
-        ax1.set_xlabel('Epoch'); ax1.set_title('Overlay: AUROC/AUPRC vs Loss/MSE (Validation)')
-        # Build combined legend
-        lines1, labels1 = ax1.get_legend_handles_labels()
-        lines2, labels2 = ax2.get_legend_handles_labels()
-        ax1.legend(lines1 + lines2, labels1 + labels2, loc='best')
-        ax1.grid(True); plt.tight_layout()
-        plt.savefig(os.path.join(overlay_dir, f'overlay_epoch_{epoch:03d}.png')); plt.close()
+        ax1.set_xlabel('Epoch'); ax1.set_title('Overlay (VAL)')
+        l1,lab1=ax1.get_legend_handles_labels(); l2,lab2=ax2.get_legend_handles_labels()
+        ax1.legend(l1+l2, lab1+lab2, loc='best'); ax1.grid(True); plt.tight_layout()
+        plt.savefig(os.path.join(overlay_val_dir, f'overlay_val_epoch_{epoch:03d}.png')); plt.close()
+
+    # --- Overlay (TRAIN): AUROC/AUPRC + Train Loss/MSE (once per epoch) ---
+    xs_tr = list(range(1, len(loss_history)+1))
+    plt.figure(figsize=(9,6))
+    ax1 = plt.gca(); ax2 = ax1.twinx()
+    ax1.plot(xs_tr, auroc_train_history, marker='o', label='Train AUROC')
+    ax1.plot(xs_tr, auprc_train_history, marker='o', label='Train AUPRC')
+    ax1.set_ylim(0, 1.0); ax1.set_ylabel('AUROC / AUPRC')
+    ax2.plot(xs_tr, loss_history, marker='^', linestyle='--', label='Train Loss')
+    ax2.plot(xs_tr[:len(mse_train_history)], mse_train_history, marker='s', label='Train MSE')
+    ax2.set_ylabel('Loss / MSE')
+    ax1.set_xlabel('Epoch'); ax1.set_title('Overlay (TRAIN)')
+    l1,lab1=ax1.get_legend_handles_labels(); l2,lab2=ax2.get_legend_handles_labels()
+    ax1.legend(l1+l2, lab1+lab2, loc='best'); ax1.grid(True); plt.tight_layout()
+    plt.savefig(os.path.join(overlay_tr_dir, f'overlay_train_epoch_{epoch:03d}.png')); plt.close()
 
     # --- Scheduler & checkpoints ---
     scheduler.step()
-    # save "latest" (already there above)
 
-# >>> NEW: also save each epoch from 5 to 15
-    if 5 <= epoch <= 15:
-        net = model_restored.module if hasattr(model_restored, "module") else model_restored
-        torch.save({'epoch': epoch,
-                'state_dict': net.state_dict(),
-                'optimizer': optimizer.state_dict()},
-               os.path.join(model_dir, f"model_epoch_{epoch:02d}.pth"))
-
-    # save "latest" (only tensors)
+    # save "latest"
     torch.save({
         'epoch': epoch,
         'state_dict': (model_restored.module if hasattr(model_restored, "module") else model_restored).state_dict(),
         'optimizer': optimizer.state_dict(),
     }, os.path.join(model_dir, "model_latest.pth"))
+
+    # save checkpoints for epochs 5..15
+    if 5 <= epoch <= 15:
+        net = model_restored.module if hasattr(model_restored, "module") else model_restored
+        torch.save({'epoch': epoch,
+                    'state_dict': net.state_dict(),
+                    'optimizer': optimizer.state_dict()},
+                   os.path.join(model_dir, f"model_epoch_{epoch:03d}.pth"))
 
     # Logs
     print("------------------------------------------------------------------")
@@ -442,12 +525,9 @@ for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
     ))
     print("------------------------------------------------------------------")
 
-    writer.add_scalar('train/loss', epoch_loss, epoch)
-    writer.add_scalar('train/lr', scheduler.get_last_lr()[0], epoch)
-
-    # Collect train loss for plotting
-    loss_history.append(epoch_loss / max(1, len(train_loader)))
-
+# =========================
+# Wrap up
+# =========================
 total_finish_time = (time.time() - total_start_time)
 print('Total training time: {:.1f} hours'.format(total_finish_time / 3600.0))
 writer.close()
@@ -486,20 +566,41 @@ plt.figure(figsize=(10, 6))
 plt.plot(val_epoch_list, auroc_val_history, marker='o', label='Val AUROC')
 plt.plot(val_epoch_list, auprc_val_history, marker='o', label='Val AUPRC')
 plt.ylim(0,1); plt.xlabel('Epoch'); plt.ylabel('Score'); plt.title('Val AUROC & AUPRC per Epoch')
-plt.grid(True); plt.legend(); plt.tight_layout()
-plt.savefig(os.path.join(roc_dir, 'val_auroc_auprc_curves.png')); plt.close()
+plt.grid(True); plt.tight_layout(); plt.legend()
+plt.savefig(os.path.join(roc_val_dir, 'val_auroc_auprc_curves.png')); plt.close()
 
-# Optional: Train AUROC/AUPRC time series
-if COMPUTE_TRAIN_ROC and len(auroc_train_history):
-    plt.figure(figsize=(10, 6))
-    plt.plot(epochs_train[:len(auroc_train_history)], auroc_train_history, marker='o', label='Train AUROC')
-    plt.plot(epochs_train[:len(auprc_train_history)], auprc_train_history, marker='o', label='Train AUPRC')
-    plt.ylim(0,1); plt.xlabel('Epoch'); plt.ylabel('Score'); plt.title('Train AUROC & AUPRC per Epoch')
-    plt.grid(True); plt.legend(); plt.tight_layout()
-    plt.savefig(os.path.join(roc_dir, 'train_auroc_auprc_curves.png')); plt.close()
+# Train AUROC/AUPRC (time series)
+plt.figure(figsize=(10, 6))
+plt.plot(epochs_train, auroc_train_history, marker='o', label='Train AUROC')
+plt.plot(epochs_train, auprc_train_history, marker='o', label='Train AUPRC')
+plt.ylim(0,1); plt.xlabel('Epoch'); plt.ylabel('Score'); plt.title('Train AUROC & AUPRC per Epoch')
+plt.grid(True); plt.tight_layout(); plt.legend()
+plt.savefig(os.path.join(roc_tr_dir, 'train_auroc_auprc_curves.png')); plt.close()
 
+# =========================
+# Save numeric logs (TSV)
+# =========================
+metrics_txt = os.path.join(log_dir, 'metrics_per_epoch.txt')
+with open(metrics_txt, 'w') as f:
+    f.write('Epoch\tTrain_Loss\tVal_Loss\tTrain_MSE\tVal_MSE\tVal_MSEw\tTrain_AUROC\tTrain_AUPRC\tVal_AUROC\tVal_AUPRC\n')
+    for ep in epochs_train:
+        ep_idx = ep - 1
+        vloss = vmse = vmsew = vauroc = vauprc = ''
+        tr_auroc = f'{auroc_train_history[ep_idx]:.6f}' if not (np.isnan(auroc_train_history[ep_idx])) else ''
+        tr_auprc = f'{auprc_train_history[ep_idx]:.6f}' if not (np.isnan(auprc_train_history[ep_idx])) else ''
+        if ep in val_epoch_list:
+            i = val_epoch_list.index(ep)
+            vloss  = f'{val_loss_history[i]:.6f}'
+            vmse   = f'{mse_val_history[i]:.6f}'
+            vmsew  = f'{mse_val_weighted_history[i]:.6f}'
+            vauroc = f'{auroc_val_history[i]:.6f}' if not np.isnan(auroc_val_history[i]) else ''
+            vauprc = f'{auprc_val_history[i]:.6f}' if not np.isnan(auprc_val_history[i]) else ''
+        f.write(f'{ep}\t{loss_history[ep_idx]:.6f}\t{vloss}\t{mse_train_history[ep_idx]:.6f}\t{vmse}\t{vmsew}\t{tr_auroc}\t{tr_auprc}\t{vauroc}\t{vauprc}\n')
 
-print("\n==================== Best checkpoints ====================")
+# =========================
+# Print best checkpoints (by VAL)
+# =========================
+print("\n==================== Best checkpoints (by VAL) ====================")
 if best_auroc_epoch is not None:
     print(f"Best AUROC : {best_auroc:.6f} at epoch {best_auroc_epoch} -> {best_auroc_path}")
 else:
@@ -510,25 +611,3 @@ if best_auprc_epoch is not None:
 else:
     print("Best AUPRC : (not available; AUPRC was undefined for all val epochs)")
 print("==========================================================\n")
-
-
-# =========================
-# Save numeric logs (CSV-like)
-# =========================
-metrics_txt = os.path.join(log_dir, 'metrics_per_epoch.txt')
-with open(metrics_txt, 'w') as f:
-    f.write('Epoch\tTrain_Loss\tVal_Loss\tTrain_MSE\tVal_MSE\tVal_MSEw\tVal_AUROC\tVal_AUPRC\n')
-    for ep_idx, ep in enumerate(epochs_train):
-        vloss = ''
-        vmse  = ''
-        vmsew = ''
-        vauroc = ''
-        vauprc = ''
-        if ep in val_epoch_list:
-            i = val_epoch_list.index(ep)
-            vloss = f'{val_loss_history[i]:.6f}'
-            vmse  = f'{mse_val_history[i]:.6f}'
-            vmsew = f'{mse_val_weighted_history[i]:.6f}'
-            vauroc = f'{auroc_val_history[i]:.6f}' if not np.isnan(auroc_val_history[i]) else ''
-            vauprc = f'{auprc_val_history[i]:.6f}' if not np.isnan(auprc_val_history[i]) else ''
-        f.write(f'{ep}\t{loss_history[ep_idx]:.6f}\t{vloss}\t{mse_train_history[ep_idx]:.6f}\t{vmse}\t{vmsew}\t{vauroc}\t{vauprc}\n')
