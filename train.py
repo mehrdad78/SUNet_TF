@@ -220,6 +220,14 @@ def make_weights_from_numpy(
 
     return w
 
+def get_last_trainable_leaf(model):
+    last_name, last_mod = None, None
+    for name, m in (model.named_modules()):
+        # leaf = no children; has parameters directly
+        if sum(1 for _ in m.children()) == 0 and any(p.requires_grad for p in m.parameters(recurse=False)):
+            last_name, last_mod = name, m
+    return last_name, last_mod
+
 # =========================
 # Train!
 # =========================
@@ -340,6 +348,11 @@ for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
             'optimizer': optimizer.state_dict(),
             'scheduler': scheduler.state_dict(),
         }, os.path.join(model_dir, f"model_epoch_{epoch:01d}.pth"))
+    if epoch == 5:
+        net = model_restored.module if hasattr(model_restored, "module") else model_restored
+        lname, last = get_last_trainable_leaf(net)
+        torch.save(last.state_dict(), os.path.join(model_dir, f"last_layer_{lname}_e{epoch:01d}.pth"))
+
 
     # Logs
     print("------------------------------------------------------------------")
