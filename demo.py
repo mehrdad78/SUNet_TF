@@ -22,6 +22,13 @@ parser.add_argument('--result_dir', default='C:/Users/Lab722 BX/Desktop/CBSD68_t
 parser.add_argument('--weights',
                     default='./pretrain-model/model_bestPSNR.pth', type=str,
                     help='Path to weights')
+parser.add_argument('--weights', type=str, required=True,
+                    help='Full model checkpoint or pure state_dict')
+parser.add_argument('--last_layer_pth', type=str, default='',
+                    help='Path to last-layer-only state_dict (optional)')
+parser.add_argument('--last_layer_path', type=str, default='',
+                    help='Dotted path to the submodule, e.g. "swin_unet.output"')
+
 
 args = parser.parse_args()
 
@@ -149,10 +156,10 @@ if len(files) == 0:
     raise Exception(f"No files found at {inp_dir}")
 
 # Load corresponding model architecture and weights
-model = SUNet_model(opt)
-model.cuda()
-
-load_checkpoint(model, args.weights)
+model = SUNet_model(opt).cuda()
+load_full_or_state(model, args.weights, strict=False)
+if args.last_layer_pth and args.last_layer_path:
+    load_last_layer(model, args.last_layer_pth, args.last_layer_path, strict=False)
 model.eval()
 
 print('restoring images......')
