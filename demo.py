@@ -29,7 +29,35 @@ args = parser.parse_args()
 def save_img(filepath, img):
     cv2.imwrite(filepath, cv2.cvtColor(img, cv2.COLOR_RGB2BGR))
 
+def _strip_module(sd: dict) -> dict:
+    if any(k.startswith("module.") for k in sd.keys()):
+        return {k.replace("module.", "", 1): v for k, v in sd.items()}
+    return sd
 
+def _extract_state_dict(ckpt) -> dict:
+    # Accept: pure state_dict OR {"state_dict": ...} OR {"model": ...}
+    if isinstance(ckpt, dict):
+        if "state_dict" in ckpt and isinstance(ckpt["state_dict"], dict):
+            return ckpt["state_dict"]
+        if "model" in ckpt and isinstance(ckpt["model"], dict):
+            return ckpt["model"]
+        # If dict of tensors, assume it's already a state_dict
+        if all(isinstance(v, torch.Tensor) for v in ckpt.values()):
+            return ckpt
+    # Fallback: assume ckpt itself is a state_dict-like object
+    return ckpt
+
+def load_checkpoint(model, weights_path, map_location=None, strict=False):
+    device = map_location or (next(model.parameters()).device if any(p.requires_grad for p in model.parameters()) else "cpu")
+    # PyTorch 2.6 default is weights_only=True; that’s fine for tensors.
+    ckpt = torch.load(weights_path, map_location=device)
+    state = _strip_module(_extract_state_dict(ckpt))
+
+    target = model.module if hasattr(model, "module") else model
+    missing, unexpected = target.load_state_dict(state, strict=strict)
+    print("[load] missing:", missing)
+    print("[load] unexpected:", unexpected)
+'''    
 def load_checkpoint(model, weights):
     checkpoint = torch.load(weights)
     try:
@@ -41,6 +69,7 @@ def load_checkpoint(model, weights):
             name = k[7:]  # remove `module.`
             new_state_dict[name] = v
         model.load_state_dict(new_state_dict)
+'''
 
 inp_dir = args.input_dir
 out_dir = args.result_dir
