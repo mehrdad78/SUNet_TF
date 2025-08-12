@@ -19,9 +19,6 @@ parser = argparse.ArgumentParser(description='Demo Image Restoration')
 parser.add_argument('--input_dir', default='C:/Users/Lab722 BX/Desktop/CBSD68_test/CBSD68_50_crop/', type=str, help='Input images')
 parser.add_argument('--window_size', default=8, type=int, help='window size')
 parser.add_argument('--result_dir', default='C:/Users/Lab722 BX/Desktop/CBSD68_test/SUNet_50_crop/', type=str, help='Directory for results')
-parser.add_argument('--weights',
-                    default='./pretrain-model/model_bestPSNR.pth', type=str,
-                    help='Path to weights')
 parser.add_argument('--weights', type=str, required=True,
                     help='Full model checkpoint or pure state_dict')
 parser.add_argument('--last_layer_pth', type=str, default='',
