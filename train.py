@@ -50,7 +50,7 @@ FORCE_VAL_EVERY_EPOCH = True
 # Repro
 # =========================
 torch.backends.cudnn.benchmark = True
-SEED=1234
+SEED=132
 
 random.seed(SEED)
 np.random.seed(SEED)
