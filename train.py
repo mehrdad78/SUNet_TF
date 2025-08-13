@@ -649,53 +649,61 @@ for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
         plt.close()
 
     # === Combined TRAIN+VAL+TEST overlay (metrics) ===
+    # === Split-by-goodness overlays (TRAIN+VAL+TEST) ===
+    xs_tr = list(range(1, len(loss_hist_tr) + 1))
+    xs_val = val_epoch_list
     xs_te = test_epoch_list
+
     if len(xs_tr) > 0 and len(xs_val) > 0 and len(xs_te) > 0:
+        C_TR = 'tab:blue'   # train
+        C_VA = 'tab:red'    # val
+        C_TE = 'tab:green'  # test
+
+        # -------- High-is-good: AUROC & AUPRC --------
         plt.figure(figsize=(12, 7))
-        ax1 = plt.gca(); ax2 = ax1.twinx()
+        # Train (blue)
+        plt.plot(xs_tr, auroc_hist_tr,  marker='o', linestyle='-',  color=C_TR, label='Train AUROC')
+        plt.plot(xs_tr, auprc_hist_tr,  marker='s', linestyle='--', color=C_TR, label='Train AUPRC')
+        # Val (red)
+        plt.plot(xs_val, auroc_hist_val, marker='o', linestyle='-',  color=C_VA, label='Val AUROC')
+        plt.plot(xs_val, auprc_hist_val, marker='s', linestyle='--', color=C_VA, label='Val AUPRC')
+        # Test (green)
+        plt.plot(xs_te, auroc_hist_test, marker='o', linestyle='-',  color=C_TE, label='Test AUROC')
+        plt.plot(xs_te, auprc_hist_test, marker='s', linestyle='--', color=C_TE, label='Test AUPRC')
 
-        C_TR = SPLIT_COLOR['train'] if 'SPLIT_COLOR' in globals() else 'tab:blue'
-        C_VA = SPLIT_COLOR['val']   if 'SPLIT_COLOR' in globals() else 'tab:red'
-        C_TE = SPLIT_COLOR['test']  if 'SPLIT_COLOR' in globals() else 'tab:green'
-
-    # --- Left axis: AUROC / AUPRC (0..1) — color by split ---
-    # Train (blue)
-        ax1.plot(xs_tr, auroc_hist_tr,  marker='o', linestyle='-',  color=C_TR, label='Train AUROC')
-        ax1.plot(xs_tr, auprc_hist_tr,  marker='s', linestyle='--', color=C_TR, label='Train AUPRC')
-    # Val (red)
-        ax1.plot(xs_val, auroc_hist_val, marker='o', linestyle='-',  color=C_VA, label='Val AUROC')
-        ax1.plot(xs_val, auprc_hist_val, marker='s', linestyle='--', color=C_VA, label='Val AUPRC')
-    # Test (green)
-        ax1.plot(xs_te, auroc_hist_test, marker='o', linestyle='-',  color=C_TE, label='Test AUROC')
-        ax1.plot(xs_te, auprc_hist_test, marker='s', linestyle='--', color=C_TE, label='Test AUPRC')
-
-        ax1.set_ylim(0, 1.0)
-        ax1.set_ylabel('AUROC / AUPRC')
-
-    # --- Right axis: Loss + MSE + MSE (Weighted) — color by split ---
-    # Train (blue)
-        ax2.plot(xs_tr, loss_hist_tr,  marker='^', linestyle='-',  color=C_TR, label='Train Loss')
-        ax2.plot(xs_tr, mse_hist_tr,   marker='d', linestyle='-.', color=C_TR, label='Train MSE')
-        ax2.plot(xs_tr, mseW_hist_tr,  marker='x', linestyle=':',  color=C_TR, label='Train MSE (W)')
-    # Val (red)
-        ax2.plot(xs_val, loss_hist_val, marker='^', linestyle='-',  color=C_VA, label='Val Loss')
-        ax2.plot(xs_val, mse_hist_val,  marker='d', linestyle='-.', color=C_VA, label='Val MSE')
-        ax2.plot(xs_val, mseW_hist_val, marker='x', linestyle=':',  color=C_VA, label='Val MSE (W)')
-    # Test (green) — we typically don’t track test loss per epoch, so only MSEs:
-        ax2.plot(xs_te, mse_hist_test,  marker='d', linestyle='-.', color=C_TE, label='Test MSE')
-        ax2.plot(xs_te, mseW_hist_test, marker='x', linestyle=':',  color=C_TE, label='Test MSE (W)')
-
-        ax2.set_ylabel('Loss / MSE')
-        ax1.set_xlabel('Epoch')
-        ax1.set_title(f'Train + Val + Test Overlay (up to epoch {epoch})')
-
-        h1, l1 = ax1.get_legend_handles_labels()
-        h2, l2 = ax2.get_legend_handles_labels()
-        ax1.legend(h1 + h2, l1 + l2, loc='best')
-        ax1.grid(True)
+        plt.ylim(0, 1.0)
+        plt.xlabel('Epoch')
+        plt.ylabel('Score (higher is better)')
+        plt.title(f'AUROC & AUPRC (Train/Val/Test) — up to epoch {epoch}')
+        plt.grid(True)
+        plt.legend(loc='best')
         plt.tight_layout()
-        plt.savefig(os.path.join(overlay_tvt_d, f'overlay_train_val_test_up_to_epoch_{epoch:03d}.png'))
+        plt.savefig(os.path.join(overlay_tvt_d, f'high_metrics_up_to_epoch_{epoch:03d}.png'))
         plt.close()
+
+        # -------- Low-is-good: Loss, MSE, Weighted MSE --------
+        plt.figure(figsize=(12, 7))
+        # Train (blue)
+        plt.plot(xs_tr, loss_hist_tr,  marker='^', linestyle='-',  color=C_TR, label='Train Loss')
+        plt.plot(xs_tr, mse_hist_tr,   marker='d', linestyle='-.', color=C_TR, label='Train MSE')
+        plt.plot(xs_tr, mseW_hist_tr,  marker='x', linestyle=':',  color=C_TR, label='Train MSE (W)')
+        # Val (red)
+        plt.plot(xs_val, loss_hist_val,  marker='^', linestyle='-',  color=C_VA, label='Val Loss')
+        plt.plot(xs_val, mse_hist_val,   marker='d', linestyle='-.', color=C_VA, label='Val MSE')
+        plt.plot(xs_val, mseW_hist_val,  marker='x', linestyle=':',  color=C_VA, label='Val MSE (W)')
+        # Test (green) — typically we don’t track test *loss*, so only MSEs:
+        plt.plot(xs_te, mse_hist_test,   marker='d', linestyle='-.', color=C_TE, label='Test MSE')
+        plt.plot(xs_te, mseW_hist_test,  marker='x', linestyle=':',  color=C_TE, label='Test MSE (W)')
+
+        plt.xlabel('Epoch')
+        plt.ylabel('Loss / Error (lower is better)')
+        plt.title(f'Loss, MSE, Weighted MSE (Train/Val/Test) — up to epoch {epoch}')
+        plt.grid(True)
+        plt.legend(loc='best')
+        plt.tight_layout()
+        plt.savefig(os.path.join(overlay_tvt_d, f'low_metrics_up_to_epoch_{epoch:03d}.png'))
+        plt.close()
+
 
     # =========================
     # Scheduler & checkpoints
@@ -709,7 +717,7 @@ for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
         'optimizer': optimizer.state_dict(),
     }, os.path.join(model_dir, "model_latest.pth"))
 
-    # save checkpoints for epochs 5..15
+
     
     # Console log per epoch
     print("------------------------------------------------------------------")
