@@ -23,6 +23,12 @@ from utils import network_parameters
 # =========================
 # Settings you can tweak
 # =========================
+# ---- color/style palette (split-based colors) ----
+SPLIT_COLOR = {'train':'tab:blue','val':'tab:red','test':'tab:green'}}
+# optional: markers & linestyles so different metrics remain distinguishable
+MARK = {'auroc':'o', 'auprc':'x', 'loss':'^', 'mse':'s', 'mse_w':'d'}
+STYLE = {'train':'-', 'val':'--', 'test':':'}
+
 # Boundary-weight settings
 K_RINGS = 2
 STROKE_W = 3.0
@@ -645,31 +651,47 @@ for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
     if len(xs_tr) > 0 and len(xs_val) > 0 and len(xs_te) > 0:
         plt.figure(figsize=(12, 7))
         ax1 = plt.gca(); ax2 = ax1.twinx()
-        # Colors by metric; line styles by split
-        # AUROC
-        ax1.plot(xs_tr, auroc_hist_tr,  marker='o', color='tab:blue',   linestyle='-',  label='Train AUROC')
-        ax1.plot(xs_val, auroc_hist_val, marker='o', color='tab:blue',   linestyle='--', label='Val AUROC')
-        ax1.plot(xs_te, auroc_hist_test, marker='o', color='tab:blue',   linestyle=':',  label='Test AUROC')
-        # AUPRC
-        ax1.plot(xs_tr, auprc_hist_tr,  marker='s', color='tab:orange', linestyle='-',  label='Train AUPRC')
-        ax1.plot(xs_val, auprc_hist_val, marker='s', color='tab:orange', linestyle='--', label='Val AUPRC')
-        ax1.plot(xs_te, auprc_hist_test, marker='s', color='tab:orange', linestyle=':',  label='Test AUPRC')
-        ax1.set_ylim(0, 1.0); ax1.set_ylabel('AUROC / AUPRC')
-        # Right axis: Loss (train/val) + MSE (train/val/test) + MSEw (train/val/test)
-        ax2.plot(xs_tr, loss_hist_tr, marker='^', color='tab:red', linestyle='-',  label='Train Loss')
-        ax2.plot(xs_val, loss_hist_val, marker='^', color='tab:red', linestyle='--', label='Val Loss')
-        # MSE
-        ax2.plot(xs_tr, mse_hist_tr,  marker='d', color='tab:green',  linestyle='-',  label='Train MSE')
-        ax2.plot(xs_val, mse_hist_val, marker='d', color='tab:green',  linestyle='--', label='Val MSE')
-        ax2.plot(xs_te, mse_hist_test, marker='d', color='tab:green',  linestyle=':',  label='Test MSE')
-        # MSE weighted
-        ax2.plot(xs_tr, mseW_hist_tr,  marker='x', color='tab:purple', linestyle='-',  label='Train MSE (W)')
-        ax2.plot(xs_val, mseW_hist_val, marker='x', color='tab:purple', linestyle='--', label='Val MSE (W)')
-        ax2.plot(xs_te, mseW_hist_test, marker='x', color='tab:purple', linestyle=':',  label='Test MSE (W)')
+
+        C_TR = SPLIT_COLOR['train'] if 'SPLIT_COLOR' in globals() else 'tab:blue'
+        C_VA = SPLIT_COLOR['val']   if 'SPLIT_COLOR' in globals() else 'tab:red'
+        C_TE = SPLIT_COLOR['test']  if 'SPLIT_COLOR' in globals() else 'tab:green'
+
+    # --- Left axis: AUROC / AUPRC (0..1) — color by split ---
+    # Train (blue)
+        ax1.plot(xs_tr, auroc_hist_tr,  marker='o', linestyle='-',  color=C_TR, label='Train AUROC')
+        ax1.plot(xs_tr, auprc_hist_tr,  marker='s', linestyle='--', color=C_TR, label='Train AUPRC')
+    # Val (red)
+        ax1.plot(xs_val, auroc_hist_val, marker='o', linestyle='-',  color=C_VA, label='Val AUROC')
+        ax1.plot(xs_val, auprc_hist_val, marker='s', linestyle='--', color=C_VA, label='Val AUPRC')
+    # Test (green)
+        ax1.plot(xs_te, auroc_hist_test, marker='o', linestyle='-',  color=C_TE, label='Test AUROC')
+        ax1.plot(xs_te, auprc_hist_test, marker='s', linestyle='--', color=C_TE, label='Test AUPRC')
+
+        ax1.set_ylim(0, 1.0)
+        ax1.set_ylabel('AUROC / AUPRC')
+
+    # --- Right axis: Loss + MSE + MSE (Weighted) — color by split ---
+    # Train (blue)
+        ax2.plot(xs_tr, loss_hist_tr,  marker='^', linestyle='-',  color=C_TR, label='Train Loss')
+        ax2.plot(xs_tr, mse_hist_tr,   marker='d', linestyle='-.', color=C_TR, label='Train MSE')
+        ax2.plot(xs_tr, mseW_hist_tr,  marker='x', linestyle=':',  color=C_TR, label='Train MSE (W)')
+    # Val (red)
+        ax2.plot(xs_val, loss_hist_val, marker='^', linestyle='-',  color=C_VA, label='Val Loss')
+        ax2.plot(xs_val, mse_hist_val,  marker='d', linestyle='-.', color=C_VA, label='Val MSE')
+        ax2.plot(xs_val, mseW_hist_val, marker='x', linestyle=':',  color=C_VA, label='Val MSE (W)')
+    # Test (green) — we typically don’t track test loss per epoch, so only MSEs:
+        ax2.plot(xs_te, mse_hist_test,  marker='d', linestyle='-.', color=C_TE, label='Test MSE')
+        ax2.plot(xs_te, mseW_hist_test, marker='x', linestyle=':',  color=C_TE, label='Test MSE (W)')
+
         ax2.set_ylabel('Loss / MSE')
-        ax1.set_xlabel('Epoch'); ax1.set_title(f'Train + Val + Test Overlay (up to epoch {epoch})')
-        h1,l1 = ax1.get_legend_handles_labels(); h2,l2 = ax2.get_legend_handles_labels()
-        ax1.legend(h1+h2, l1+l2, loc='best'); ax1.grid(True); plt.tight_layout()
+        ax1.set_xlabel('Epoch')
+        ax1.set_title(f'Train + Val + Test Overlay (up to epoch {epoch})')
+
+        h1, l1 = ax1.get_legend_handles_labels()
+        h2, l2 = ax2.get_legend_handles_labels()
+        ax1.legend(h1 + h2, l1 + l2, loc='best')
+        ax1.grid(True)
+        plt.tight_layout()
         plt.savefig(os.path.join(overlay_tvt_d, f'overlay_train_val_test_up_to_epoch_{epoch:03d}.png'))
         plt.close()
 
