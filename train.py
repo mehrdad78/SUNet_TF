@@ -50,10 +50,12 @@ FORCE_VAL_EVERY_EPOCH = True
 # Repro
 # =========================
 torch.backends.cudnn.benchmark = True
-random.seed(42)
-np.random.seed(42)
-torch.manual_seed(42)
-torch.cuda.manual_seed_all(42)
+SEED=1234
+
+random.seed(SEED)
+np.random.seed(SEED)
+torch.manual_seed(SEED)
+torch.cuda.manual_seed_all(SEED)
 
 # =========================
 # Load YAML
