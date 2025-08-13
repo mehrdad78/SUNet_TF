@@ -502,16 +502,16 @@ for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
 
     # --- Scheduler & checkpoints ---
     scheduler.step()
-
+    
     # save "latest"
-    torch.save({
-        'epoch': epoch,
-        'state_dict': (model_restored.module if hasattr(model_restored, "module") else model_restored).state_dict(),
-        'optimizer': optimizer.state_dict(),
-    }, os.path.join(model_dir, "model_latest.pth"))
+    #torch.save({
+     #   'epoch': epoch,
+      #  'state_dict': (model_restored.module if hasattr(model_restored, "module") else model_restored).state_dict(),
+       # 'optimizer': optimizer.state_dict(),
+    #}, os.path.join(model_dir, "model_latest.pth"))
 
     # save checkpoints for epochs 5..15
-    if 8 <= epoch <= 14:
+    if 1 <= epoch <= 5:
         net = model_restored.module if hasattr(model_restored, "module") else model_restored
         torch.save({'epoch': epoch,
                     'state_dict': net.state_dict(),
