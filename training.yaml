@@ -39,5 +39,6 @@ TRAINING:
   TRAIN_PS: 256
   VAL_PS: 256
   TRAIN_DIR: '/kaggle/working/train_data'       # path to training data
-  VAL_DIR: '/kaggle/working/validation_data' # path to validation data
+  VAL_DIR: '/kaggle/working/validation_data'
+  TEST_DIR: '/kaggle/working/test_data' # path to validation data
   SAVE_DIR: '/kaggle/working/checkpoints'           # path to save models and images
