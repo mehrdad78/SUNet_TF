@@ -511,7 +511,7 @@ for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
     }, os.path.join(model_dir, "model_latest.pth"))
 
     # save checkpoints for epochs 5..15
-    if 4 <= epoch <= 15:
+    if 8 <= epoch <= 14:
         net = model_restored.module if hasattr(model_restored, "module") else model_restored
         torch.save({'epoch': epoch,
                     'state_dict': net.state_dict(),
