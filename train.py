@@ -89,6 +89,7 @@ roc_val_dir  = os.path.join(plots_root, 'roc', 'val');       os.makedirs(roc_val
 pr_val_dir   = os.path.join(plots_root, 'pr', 'val');        os.makedirs(pr_val_dir,   exist_ok=True)
 mse_dir      = os.path.join(plots_root, 'mse');              os.makedirs(mse_dir,      exist_ok=True)
 loss_dir     = os.path.join(plots_root, 'loss');             os.makedirs(loss_dir,     exist_ok=True)
+overlay_tv_d  = os.path.join(plots_root, 'overlay', 'train_val'); os.makedirs(overlay_tv_d, exist_ok=True)
 
 # =========================
 # Optimizer / Scheduler
@@ -503,6 +504,46 @@ for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
         ax1.legend(h1+h2, l1+l2, loc='best')
         ax1.grid(True); plt.tight_layout()
         plt.savefig(os.path.join(overlay_v_d, f'overlay_val_up_to_epoch_{epoch:03d}.png')); plt.close()
+    # === Combined TRAIN+VAL overlay (all metrics, one figure) ===
+    xs_tr  = list(range(1, len(loss_hist_tr) + 1))
+    xs_val = val_epoch_list
+
+    if len(xs_tr) > 0 and len(xs_val) > 0:
+        
+        plt.figure(figsize=(12, 7))
+        ax1 = plt.gca()
+        ax2 = ax1.twinx()
+
+    # Left axis: AUROC/AUPRC (0..1)
+        ax1.plot(xs_tr,  auroc_hist_tr, marker='o', color='tab:green',  label='Train AUROC')
+        ax1.plot(xs_val, auroc_hist_val, marker='o', color='tab:green',  linestyle='--', label='Val AUROC')
+        ax1.plot(xs_tr,  auprc_hist_tr, marker='o', color='tab:orange', label='Train AUPRC')
+        ax1.plot(xs_val, auprc_hist_val, marker='o', color='tab:orange', linestyle='--', label='Val AUPRC')
+        ax1.set_ylim(0, 1.0)
+        ax1.set_ylabel('AUROC / AUPRC')
+
+    # Right axis: Loss / MSE / Weighted MSE
+        ax2.plot(xs_tr,  loss_hist_tr, marker='^', color='tab:red',    label='Train Loss')
+        ax2.plot(xs_val, loss_hist_val, marker='^', color='tab:red',    linestyle='--', label='Val Loss')
+
+        ax2.plot(xs_tr,  mse_hist_tr,  marker='s', color='tab:blue',   label='Train MSE')
+        ax2.plot(xs_val, mse_hist_val, marker='s', color='tab:blue',   linestyle='--', label='Val MSE')
+
+        ax2.plot(xs_tr,  mseW_hist_tr, marker='d', color='tab:purple', label='Train MSE (Weighted)')
+        ax2.plot(xs_val, mseW_hist_val, marker='d', color='tab:purple', linestyle='--', label='Val MSE (Weighted)')
+        ax2.set_ylabel('Loss / MSE')
+
+        ax1.set_xlabel('Epoch')
+        ax1.set_title(f'Train + Val Overlay (up to epoch {epoch})')
+
+        h1, l1 = ax1.get_legend_handles_labels()
+        h2, l2 = ax2.get_legend_handles_labels()
+        ax1.legend(h1 + h2, l1 + l2, loc='best')
+        ax1.grid(True)
+        plt.tight_layout()
+        plt.savefig(os.path.join(overlay_tv_d, f'overlay_train_val_up_to_epoch_{epoch:03d}.png'))
+        plt.close()
+
 
     # =========================
     # Scheduler & checkpoints
@@ -602,6 +643,8 @@ if test_dir and os.path.isdir(test_dir):
 
     test_roc_dir = os.path.join(plots_root, 'roc', 'test'); os.makedirs(test_roc_dir, exist_ok=True)
     test_pr_dir  = os.path.join(plots_root, 'pr', 'test');  os.makedirs(test_pr_dir,  exist_ok=True)
+
+
 
     model_restored.eval()
     test_mse_sum = 0.0; test_mseW_sum = 0.0; n_batches = 0
