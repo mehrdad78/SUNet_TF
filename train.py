@@ -24,7 +24,7 @@ from utils import network_parameters
 # Settings you can tweak
 # =========================
 # ---- color/style palette (split-based colors) ----
-SPLIT_COLOR = {'train':'tab:blue','val':'tab:red','test':'tab:green'}}
+SPLIT_COLOR = {'train':'tab:blue','val':'tab:red','test':'tab:green'}
 # optional: markers & linestyles so different metrics remain distinguishable
 MARK = {'auroc':'o', 'auprc':'x', 'loss':'^', 'mse':'s', 'mse_w':'d'}
 STYLE = {'train':'-', 'val':'--', 'test':':'}
