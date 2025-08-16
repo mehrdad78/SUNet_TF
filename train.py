@@ -180,7 +180,7 @@ def background_adjacent_to_foreground(binary_image, k, footprint=None):
         prev = dil
     return neigh_masks
 
-def make_weight_matrix(binary_image, masks, stroke_w=4.0, masks_w=(4.0, 1.0, 1.0), bg_min=0.0):
+def make_weight_matrix(binary_image, masks, stroke_w=3.0, masks_w=(3.0, 2.0, 1.0), bg_min=0.0):
     """
     weights: float32. Foreground gets stroke_w; ring i gets masks_w[i] (or last if i >= len).
     """
@@ -335,8 +335,14 @@ for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
         for ii, data_val in enumerate(val_loader, 0):
             target = data_val[0].cuda()
                                         # 🔍 بررسی محدوده تارگت برای نرمال‌سازی
-            input_ = data_val[1].cuda()
+          
 
+
+            input_ = data_val[1].cuda()
+           # if target.max() > 1:
+            #    target = (target > 127).float()
+
+            # Convert target to grayscale if it is RGB
             if target.shape[1] == 3:
                 target = 0.2989 * target[:, 0:1] + 0.5870 * \
                     target[:, 1:2] + 0.1140 * target[:, 2:3]
@@ -345,6 +351,8 @@ for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
             with torch.no_grad():
                 #restored = torch.sigmoid(model_restored(input_))
                 restored = model_restored(input_)
+
+
 
             val_weights = make_weights_from_numpy(target, k=2, stroke_w=3.0, ring_w=(3.0, 2.0, 1.0))
 
