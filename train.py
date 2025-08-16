@@ -511,14 +511,12 @@ for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
                 best_auroc = auroc
                 best_auroc_epoch = epoch
                 best_auroc_path = os.path.join(model_dir, f"model_best_auroc_e{epoch:03d}.pth")
-                torch.save({'epoch': epoch, 'state_dict': net.state_dict(), 'optimizer': optimizer.state_dict()},
-                           best_auroc_path)
+               
             if auprc > best_auprc:
                 best_auprc = auprc
                 best_auprc_epoch = epoch
                 best_auprc_path = os.path.join(model_dir, f"model_best_auprc_e{epoch:03d}.pth")
-                torch.save({'epoch': epoch, 'state_dict': net.state_dict(), 'optimizer': optimizer.state_dict()},
-                           best_auprc_path)
+               
         else:
             auroc_hist_val.append(np.nan)
             auprc_hist_val.append(np.nan)
