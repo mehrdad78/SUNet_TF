@@ -50,6 +50,8 @@ os.makedirs(out_dir, exist_ok=True)
 files = natsorted(glob(os.path.join(inp_dir, '*.jpg'))
                   + glob(os.path.join(inp_dir, '*.JPG'))
                   + glob(os.path.join(inp_dir, '*.png'))
+                   + glob(os.path.join(inp_dir, '*.bmp'))
+                    + glob(os.path.join(inp_dir, '*.BMP'))
                   + glob(os.path.join(inp_dir, '*.PNG')))
 
 if len(files) == 0:
