@@ -202,26 +202,19 @@ def charbonnier_loss(pred, target, weight=None, eps=1e-3):
 
 # --- NEW: Standardize targets so 1 = line, 0 = background ---
 def to_gray01_and_lines_as_one(t: torch.Tensor) -> torch.Tensor:
-    """
-    t: (B,C,H,W) float tensor from dataset; can be RGB or single-channel; range [0,255] or [0,1].
-    Returns (B,1,H,W) in [0,1] with 1 = line (foreground), 0 = background.
-    """
-    # grayscale if needed
+    # grayscale
     if t.ndim == 4 and t.size(1) == 3:
-        t = 0.2989 * t[:, 0:1] + 0.5870 * t[:, 1:2] + 0.1140 * t[:, 2:3]
-    # normalize to [0,1]
+        t = 0.2989 * t[:,0:1] + 0.5870 * t[:,1:2] + 0.1140 * t[:,2:3]
+    # normalize
     if t.max().item() > 1.0 + 1e-6:
         t = t / 255.0
-    t = t.clamp(0.0, 1.0)
-    # polarity: auto or forced
-    if FORCE_LINES_ARE_BLACK is True:
+    # binarize if needed
+    t = (t > 0.5).float()
+    # invert if mean > 0.5 (lines are black in source)
+    if t.mean().item() > 0.5:
         t = 1.0 - t
-    elif FORCE_LINES_ARE_BLACK is None:
-        # if background is dominant white -> mean > 0.5 -> lines likely dark -> invert
-        if t.mean().item() > 0.5:
-            t = 1.0 - t
-    # NOTE: we keep it soft (not hard-binarizing). Your downstream code thresholds when needed.
     return t
+
 
 def background_adjacent_to_foreground(binary_image, k, footprint=None):
     if footprint is None:
