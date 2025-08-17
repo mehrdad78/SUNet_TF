@@ -13,7 +13,7 @@ import matplotlib.pyplot as plt
 from sklearn.metrics import (
     roc_auc_score, average_precision_score, roc_curve, precision_recall_curve
 )
-from scipy.ndimage import binary_dilation
+from skimage.morphology import binary_dilation
 from warmup_scheduler import GradualWarmupScheduler
 
 # ===== project imports =====
