@@ -345,7 +345,9 @@ for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
             p.grad = None
 
         # ===== CHANGED: standardize target =====
-        target = to_gray01_and_lines_as_one(data[0].cuda())  # (B,1,H,W) in [0,1], 1=line
+        target = to_gray01_and_lines_as_one(data[0].cuda())
+        print('target min/max/mean:', target.min().item(), target.max().item(), target.mean().item())
+
         input_  = data[1].cuda()
 
         logits = model_restored(input_)              # raw model output
