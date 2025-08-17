@@ -1,20 +1,21 @@
-import os
-import time
-import random
-import yaml
+# -*- coding: utf-8 -*-
+
+# ===== std / third-party imports =====
+import os, time, random, yaml
 import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
-import matplotlib.pyplot as plt
 from torch.utils.data import DataLoader
 from tensorboardX import SummaryWriter
 from tqdm import tqdm
-from warmup_scheduler import GradualWarmupScheduler
-from skimage.morphology import binary_dilation
-from sklearn.metrics import roc_auc_score, average_precision_score, roc_curve, precision_recall_curve
+import matplotlib.pyplot as plt
+from sklearn.metrics import (
+    roc_auc_score, average_precision_score, roc_curve, precision_recall_curve
+)
+from scipy.ndimage import binary_dilation
 
-# project imports
+# ===== project imports =====
 from model.SUNet import SUNet_model
 from data_RGB import get_training_data, get_validation_data
 import utils
@@ -45,6 +46,11 @@ COMPUTE_TRAIN_ROC = True
 
 # Validate every epoch? (use your YAML if you prefer)
 FORCE_VAL_EVERY_EPOCH = True
+
+# --- NEW: force polarity override (None = auto detect)
+# True  -> assume lines are black in raw mask, invert to make 1 = line
+# False -> assume lines are white already, keep as is
+FORCE_LINES_ARE_BLACK = None
 
 # =========================
 # Repro
@@ -193,6 +199,28 @@ def charbonnier_loss(pred, target, weight=None, eps=1e-3):
         return l.mean()
     return (l * weight).sum() / weight.sum().clamp(min=1e-8)
 
+# --- NEW: Standardize targets so 1 = line, 0 = background ---
+def to_gray01_and_lines_as_one(t: torch.Tensor) -> torch.Tensor:
+    """
+    t: (B,C,H,W) float tensor from dataset; can be RGB or single-channel; range [0,255] or [0,1].
+    Returns (B,1,H,W) in [0,1] with 1 = line (foreground), 0 = background.
+    """
+    # grayscale if needed
+    if t.ndim == 4 and t.size(1) == 3:
+        t = 0.2989 * t[:, 0:1] + 0.5870 * t[:, 1:2] + 0.1140 * t[:, 2:3]
+    # normalize to [0,1]
+    if t.max().item() > 1.0 + 1e-6:
+        t = t / 255.0
+    t = t.clamp(0.0, 1.0)
+    # polarity: auto or forced
+    if FORCE_LINES_ARE_BLACK is True:
+        t = 1.0 - t
+    elif FORCE_LINES_ARE_BLACK is None:
+        # if background is dominant white -> mean > 0.5 -> lines likely dark -> invert
+        if t.mean().item() > 0.5:
+            t = 1.0 - t
+    # NOTE: we keep it soft (not hard-binarizing). Your downstream code thresholds when needed.
+    return t
 
 def background_adjacent_to_foreground(binary_image, k, footprint=None):
     if footprint is None:
@@ -206,7 +234,6 @@ def background_adjacent_to_foreground(binary_image, k, footprint=None):
         prev = dil
     return neigh_masks
 
-
 def make_weight_matrix(binary_image, masks, stroke_w=STROKE_W, masks_w=RING_W, bg_min=0.0):
     h, w = binary_image.shape
     weights = np.zeros((h, w), dtype=np.float32)
@@ -218,7 +245,6 @@ def make_weight_matrix(binary_image, masks, stroke_w=STROKE_W, masks_w=RING_W, b
         wv = masks_w[i] if i < len(masks_w) else masks_w[-1]
         weights[mask] = float(wv)
     return weights
-
 
 def make_weights_from_numpy(target_t, k=K_RINGS, stroke_w=STROKE_W, ring_w=RING_W,
                             normalize_to_mean_one=NORM_MEAN_ONE, bg_min=0.0):
@@ -244,7 +270,6 @@ def make_weights_from_numpy(target_t, k=K_RINGS, stroke_w=STROKE_W, ring_w=RING_
     if normalize_to_mean_one:
         w = w / w.mean().clamp(min=1e-8)
     return w
-
 
 def _collect_scores(y_score, y_true, buf_scores, buf_trues, cap, collected_count):
     """Append scores/labels with an optional global cap to limit memory."""
@@ -318,12 +343,9 @@ for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
         for p in model_restored.parameters():
             p.grad = None
 
-        target = data[0].cuda()
+        # ===== CHANGED: standardize target =====
+        target = to_gray01_and_lines_as_one(data[0].cuda())  # (B,1,H,W) in [0,1], 1=line
         input_  = data[1].cuda()
-
-        # if masks are RGB, convert; otherwise keep (B,1,H,W)
-        if target.shape[1] == 3:
-            target = 0.2989 * target[:, 0:1] + 0.5870 * target[:, 1:2] + 0.1140 * target[:, 2:3]
 
         logits = model_restored(input_)              # raw model output
         prob   = torch.sigmoid(logits)               # for metrics
@@ -356,6 +378,10 @@ for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
         loss.backward()
         optimizer.step()
         epoch_loss += loss.item()
+
+        # optional quick sanity log on first batch
+        if i == 0:
+            writer.add_scalar('debug/train_target_mean', target.mean().item(), epoch)
 
     # Aggregate train metrics (per epoch)
     train_loss_epoch = epoch_loss / max(1, len(train_loader))
@@ -423,12 +449,10 @@ for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
         mixed_items = skipped_single = 0
 
         with torch.no_grad():
-            for data_val in val_loader:
-                target = data_val[0].cuda()
+            for j, data_val in enumerate(val_loader):
+                # ===== CHANGED: standardize target =====
+                target = to_gray01_and_lines_as_one(data_val[0].cuda())
                 input_  = data_val[1].cuda()
-
-                if target.shape[1] == 3:
-                    target = 0.2989 * target[:, 0:1] + 0.5870 * target[:, 1:2] + 0.1140 * target[:, 2:3]
 
                 logits = model_restored(input_)
                 prob   = torch.sigmoid(logits)
@@ -458,6 +482,9 @@ for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
                                                     VAL_AUROC_SUBSAMPLE, val_collected)
                 else:
                     skipped_single += 1
+
+                if j == 0:
+                    writer.add_scalar('debug/val_target_mean', target.mean().item(), epoch)
 
         # Aggregate val metrics
         val_mse_epoch  = val_mse_sum  / max(1, val_batches)
@@ -512,12 +539,10 @@ for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
                 best_auroc = auroc
                 best_auroc_epoch = epoch
                 best_auroc_path = os.path.join(model_dir, f"model_best_auroc_e{epoch:03d}.pth")
-                
             if auprc > best_auprc:
                 best_auprc = auprc
                 best_auprc_epoch = epoch
                 best_auprc_path = os.path.join(model_dir, f"model_best_auprc_e{epoch:03d}.pth")
-               
         else:
             auroc_hist_val.append(np.nan)
             auprc_hist_val.append(np.nan)
@@ -531,11 +556,11 @@ for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
             pos_total_t = neg_total_t = 0; mixed_items_t = skipped_single_t = 0
             collected_t = 0
             with torch.no_grad():
-                for data_test in test_loader:
-                    target = data_test[0].cuda()
+                for k, data_test in enumerate(test_loader):
+                    # ===== CHANGED: standardize target =====
+                    target = to_gray01_and_lines_as_one(data_test[0].cuda())
                     input_  = data_test[1].cuda()
-                    if target.shape[1] == 3:
-                        target = 0.2989 * target[:, 0:1] + 0.5870 * target[:, 1:2] + 0.1140 * target[:, 2:3]
+
                     logits = model_restored(input_)
                     prob   = torch.sigmoid(logits)
                     se = (prob - target) ** 2
@@ -555,6 +580,9 @@ for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
                                                       TEST_AUROC_SUBSAMPLE, collected_t)
                     else:
                         skipped_single_t += 1
+
+                    if k == 0:
+                        writer.add_scalar('debug/test_target_mean', target.mean().item(), epoch)
 
             test_mse_epoch  = test_mse_sum  / max(1, test_batches)
             test_mseW_epoch = test_mseW_sum / max(1, test_batches)
@@ -649,7 +677,6 @@ for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
         plt.close()
 
     # === Combined TRAIN+VAL+TEST overlay (metrics) ===
-    # === Split-by-goodness overlays (TRAIN+VAL+TEST) ===
     xs_tr = list(range(1, len(loss_hist_tr) + 1))
     xs_val = val_epoch_list
     xs_te = test_epoch_list
@@ -704,7 +731,6 @@ for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
         plt.savefig(os.path.join(overlay_tvt_d, f'low_metrics_up_to_epoch_{epoch:03d}.png'))
         plt.close()
 
-
     # =========================
     # Scheduler & checkpoints
     # =========================
@@ -717,8 +743,6 @@ for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
         'optimizer': optimizer.state_dict(),
     }, os.path.join(model_dir, "model_latest.pth"))
 
-
-    
     # Console log per epoch
     print("------------------------------------------------------------------")
     print("Epoch: {}\tTime: {:.4f}\tLoss: {:.4f}\tLearningRate {:.6f}".format(
