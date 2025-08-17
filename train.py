@@ -30,7 +30,7 @@ MARK = {'auroc':'o', 'auprc':'x', 'loss':'^', 'mse':'s', 'mse_w':'d'}
 STYLE = {'train':'-', 'val':'--', 'test':':'}
 
 # Boundary-weight settings
-K_RINGS = 2
+K_RINGS = 3
 STROKE_W = 3.0
 RING_W = (3.0, 2.0, 1.0)
 NORM_MEAN_ONE = True
