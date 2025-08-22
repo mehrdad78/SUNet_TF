@@ -143,18 +143,12 @@ def charbonnier_loss(pred, target, weight=None, eps=1e-3):
     return (l * weight).sum() / weight.sum().clamp(min=1e-8)
 
 
-'''
-def charbonnier_loss(pred, target, weight=None, eps=1e-3, reduction='mean'):
-    diff = pred - target
-    loss = torch.sqrt(diff * diff + eps * eps)
-    if weight is not None:
-        loss = loss * weight
-    if reduction == 'mean':
-        return loss.mean()
-    elif reduction == 'sum':
-        return loss.sum()
-    return loss
-'''
+def mse_loss(pred, target, weight=None):
+    diff = (pred - target) ** 2
+    if weight is None:
+        return diff.mean()
+    return (diff * weight).sum() / weight.sum().clamp(min=1e-8)
+
 
 
 from skimage.morphology import binary_dilation
@@ -267,7 +261,7 @@ for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
 
             # Stack into (B,1,H,W) and move to GPU
         weights = make_weights_from_numpy(target, k=2, stroke_w=3.0, ring_w=(3.0,2.0,1.0))
-        loss = charbonnier_loss(restored, target, weight=weights, eps=1e-3)
+        loss = mse_loss(restored, target, weight=weights, eps=1e-3)
         
         # Back propagation
         loss.backward()
@@ -298,7 +292,7 @@ for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
 
             val_weights = make_weights_from_numpy(target, k=2, stroke_w=3.0, ring_w=(3.0, 2.0, 1.0))
 
-            val_loss = charbonnier_loss(restored, target, weight=val_weights, eps=1e-3)
+            val_loss = mse_loss(restored, target, weight=val_weights, eps=1e-3)
 
             val_epoch_loss += val_loss.item()
    
