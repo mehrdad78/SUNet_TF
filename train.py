@@ -261,7 +261,8 @@ for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
 
             # Stack into (B,1,H,W) and move to GPU
         weights = make_weights_from_numpy(target, k=2, stroke_w=3.0, ring_w=(3.0,2.0,1.0))
-        loss = mse_loss(restored, target, weight=weights, eps=1e-3)
+        loss = loss = mse_loss(restored, target, weight=weights)
+
         
         # Back propagation
         loss.backward()
@@ -292,7 +293,8 @@ for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
 
             val_weights = make_weights_from_numpy(target, k=2, stroke_w=3.0, ring_w=(3.0, 2.0, 1.0))
 
-            val_loss = mse_loss(restored, target, weight=val_weights, eps=1e-3)
+            val_loss = loss = mse_loss(restored, target, weight=weights)
+
 
             val_epoch_loss += val_loss.item()
    
