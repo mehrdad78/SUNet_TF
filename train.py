@@ -336,7 +336,7 @@ for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
         # weights & losses
         weights = make_weights_from_numpy(target, k=K_RINGS, stroke_w=STROKE_W, ring_w=RING_W)
         # NOTE: using logits in Charbonnier is fine with eps
-        loss = charbonnier_loss(logits, target, weight=weights, eps=1e-3)
+        loss = mse_loss(logits, target, weight=weights)
 
         # Train MSE & weighted MSE (no grad)
         with torch.no_grad():
@@ -445,7 +445,7 @@ for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
                 weights = make_weights_from_numpy(target, k=K_RINGS, stroke_w=STROKE_W, ring_w=RING_W)
                 val_mseW_sum += (se * weights).sum().item() / max(1e-8, weights.sum().item())
 
-                val_loss = charbonnier_loss(logits, target, weight=weights, eps=1e-3)
+                val_loss = mse_loss(logits, target, weight=weights)
                 val_epoch_loss += val_loss.item()
                 val_batches += 1
 
