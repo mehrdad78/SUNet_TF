@@ -27,7 +27,7 @@ MODEL:
 # Optimization arguments.
 OPTIM:
   BATCH: 4
-  EPOCHS: 22
+  EPOCHS: 16
   # EPOCH_DECAY: [10]
   LR_INITIAL: 2e-4
   LR_MIN: 1e-6
@@ -40,5 +40,5 @@ TRAINING:
   VAL_PS: 256
   TRAIN_DIR: '/kaggle/working/train_data'       # path to training data
   VAL_DIR: '/kaggle/working/validation_data'
-  #TEST_DIR: '/kaggle/working/test_data' # path to validation data
+  TEST_DIR: '/kaggle/working/test_data' # path to validation data
   SAVE_DIR: '/kaggle/working/checkpoints'           # path to save models and images

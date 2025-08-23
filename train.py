@@ -3,6 +3,7 @@ import time
 import random
 import yaml
 import numpy as np
+import pandas as pd
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -340,7 +341,7 @@ for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
 
         # Train MSE & weighted MSE (no grad)
         with torch.no_grad():
-            se = (prob - target) ** 2
+            se = (logits - target) ** 2
             tr_mse_sum  += se.mean().item()
             tr_mseW_sum += (se * weights).sum().item() / max(1e-8, weights.sum().item())
             tr_batches  += 1
@@ -439,7 +440,7 @@ for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
                 prob   = torch.sigmoid(logits)
 
                 # MSE, MSE weighted, and val loss
-                se = (prob - target) ** 2
+                se = (logits - target) ** 2
                 val_mse_sum += se.mean().item()
 
                 weights = make_weights_from_numpy(target, k=K_RINGS, stroke_w=STROKE_W, ring_w=RING_W)
@@ -543,7 +544,7 @@ for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
                         target = 0.2989 * target[:, 0:1] + 0.5870 * target[:, 1:2] + 0.1140 * target[:, 2:3]
                     logits = model_restored(input_)
                     prob   = torch.sigmoid(logits)
-                    se = (prob - target) ** 2
+                    se = (logits - target) ** 2
                     test_mse_sum  += se.mean().item()
                     w = make_weights_from_numpy(target, k=K_RINGS, stroke_w=STROKE_W, ring_w=RING_W)
                     test_mseW_sum += (se * w).sum().item() / max(1e-8, w.sum().item())
@@ -761,31 +762,53 @@ plt.close()
 # =========================
 # Save numeric logs
 # =========================
-metrics_txt = os.path.join(log_dir, 'metrics_per_epoch.txt')
-with open(metrics_txt, 'w') as f:
-    f.write('Epoch\tTrain_Loss\tVal_Loss\tTrain_MSE\tTrain_MSEw\tVal_MSE\tVal_MSEw\tTrain_AUROC\tTrain_AUPRC\tVal_AUROC\tVal_AUPRC\tTest_MSE\tTest_MSEw\tTest_AUROC\tTest_AUPRC\n')
-    for ep in epochs_tr:
-        idx = ep - 1
-        vloss = vmse = vmsew = vauroc = vauprc = ''
-        if ep in val_epoch_list:
-            i = val_epoch_list.index(ep)
-            vloss = f'{loss_hist_val[i]:.6f}'
-            vmse  = f'{mse_hist_val[i]:.6f}'
-            vmsew = f'{mseW_hist_val[i]:.6f}'
-            vauroc = f'{auroc_hist_val[i]:.6f}' if not np.isnan(auroc_hist_val[i]) else ''
-            vauprc = f'{auprc_hist_val[i]:.6f}' if not np.isnan(auprc_hist_val[i]) else ''
-        # test columns (only when that epoch had test eval)
-        t_mse = t_msew = t_roc = t_pr = ''
-        if ep in test_epoch_list:
-            j = test_epoch_list.index(ep)
-            t_mse  = f'{mse_hist_test[j]:.6f}'
-            t_msew = f'{mseW_hist_test[j]:.6f}'
-            t_roc  = f'{auroc_hist_test[j]:.6f}' if not np.isnan(auroc_hist_test[j]) else ''
-            t_pr   = f'{auprc_hist_test[j]:.6f}' if not np.isnan(auprc_hist_test[j]) else ''
-        tr_auroc = f'{auroc_hist_tr[idx]:.6f}' if not np.isnan(auroc_hist_tr[idx]) else ''
-        tr_auprc = f'{auprc_hist_tr[idx]:.6f}' if not np.isnan(auprc_hist_tr[idx]) else ''
-        f.write(f'{ep}\t{loss_hist_tr[idx]:.6f}\t{vloss}\t{mse_hist_tr[idx]:.6f}\t{mseW_hist_tr[idx]:.6f}\t{vmse}\t{vmsew}\t{tr_auroc}\t{tr_auprc}\t{vauroc}\t{vauprc}\t{t_mse}\t{t_msew}\t{t_roc}\t{t_pr}\n')
+# --- Collect all metrics into a DataFrame ---
+records = []
 
+for ep in epochs_tr:
+    idx = ep - 1
+    record = {
+        "Epoch": ep,
+        "Train_Loss": loss_hist_tr[idx],
+        "Train_MSE": mse_hist_tr[idx],
+        #"Train_MSEw": mseW_hist_tr[idx],
+        "Train_AUROC": auroc_hist_tr[idx] if not np.isnan(auroc_hist_tr[idx]) else None,
+        "Train_AUPRC": auprc_hist_tr[idx] if not np.isnan(auprc_hist_tr[idx]) else None,
+        "Val_Loss": None, "Val_MSE": None, "Val_MSEw": None,
+        "Val_AUROC": None, "Val_AUPRC": None,
+        "Test_MSE": None, "Test_MSEw": None, "Test_AUROC": None, "Test_AUPRC": None,
+    }
+
+    # Fill VAL if available
+    if ep in val_epoch_list:
+        i = val_epoch_list.index(ep)
+        record.update({
+            "Val_Loss":  loss_hist_val[i],
+            "Val_MSE":   mse_hist_val[i],
+            #"Val_MSEw":  mseW_hist_val[i],
+            "Val_AUROC": auroc_hist_val[i] if not np.isnan(auroc_hist_val[i]) else None,
+            "Val_AUPRC": auprc_hist_val[i] if not np.isnan(auprc_hist_val[i]) else None,
+        })
+
+    # Fill TEST if available
+    if ep in test_epoch_list:
+        j = test_epoch_list.index(ep)
+        record.update({
+            "Test_MSE":   mse_hist_test[j],
+            #"Test_MSEw":  mseW_hist_test[j],
+            "Test_AUROC": auroc_hist_test[j] if not np.isnan(auroc_hist_test[j]) else None,
+            "Test_AUPRC": auprc_hist_test[j] if not np.isnan(auprc_hist_test[j]) else None,
+        })
+
+    records.append(record)
+
+df = pd.DataFrame(records)
+
+# --- Save to CSV ---
+csv_path = os.path.join(log_dir, "metrics_per_epoch.csv")
+df.to_csv(csv_path, index=False, float_format="%.6f")
+
+print(f"✅ Metrics saved to {csv_path}")
 # =========================
 # Print best checkpoints (by VAL)
 # =========================
