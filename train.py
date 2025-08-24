@@ -233,8 +233,6 @@ def make_weights_from_numpy(target_t, k=K_RINGS, stroke_w=STROKE_W, ring_w=RING_
     tgt_np = target_t.detach().cpu().numpy()
     if tgt_np.max() <= 1.0:
         bin_batch = (tgt_np > 0.5).astype(np.uint8)
-    else:
-        bin_batch = (tgt_np > 127).astype(np.uint8)
     weights_list = []
     for b in range(bin_batch.shape[0]):
         bin_img = bin_batch[b, 0]
