@@ -29,7 +29,7 @@ STYLE = {'train':'-', 'val':'--', 'test':':'}
 
 # Boundary-weight settings
 K_RINGS = 2
-STROKE_W = 5.0
+STROKE_W = 3.0
 RING_W = (3.0, 2.0, 1.0)
 NORM_MEAN_ONE = True
 
