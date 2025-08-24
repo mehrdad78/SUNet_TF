@@ -21,10 +21,7 @@ from data_RGB import get_training_data, get_validation_data
 import utils
 from utils import network_parameters
 
-# =========================
-# Settings you can tweak
-# =========================
-# ---- color/style palette (split-based colors) ----
+
 SPLIT_COLOR = {'train':'tab:blue','val':'tab:red','test':'tab:green'}
 # optional: markers & linestyles so different metrics remain distinguishable
 MARK = {'auroc':'o', 'auprc':'x', 'loss':'^', 'mse':'s', 'mse_w':'d'}
