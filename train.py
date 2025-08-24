@@ -32,7 +32,7 @@ STYLE = {'train':'-', 'val':'--', 'test':':'}
 
 # Boundary-weight settings
 K_RINGS = 2
-STROKE_W = 3.0
+STROKE_W = 5.0
 RING_W = (3.0, 2.0, 1.0)
 NORM_MEAN_ONE = True
 
@@ -199,6 +199,29 @@ def mse_loss(pred, target, weight=None):
         return diff.mean()
     return (diff * weight).sum() / weight.sum().clamp(min=1e-8)
 
+def dice_loss(pred, target, smooth=1.0):
+    """
+    pred: logits or probs of shape (B,1,H,W)
+    target: same shape
+    """
+    pred = torch.sigmoid(pred)   # convert logits → probs
+    target = target.float()
+
+    intersection = (pred * target).sum(dim=(1,2,3))
+    union = pred.sum(dim=(1,2,3)) + target.sum(dim=(1,2,3))
+    dice = (2.0 * intersection + smooth) / (union + smooth)
+    return 1.0 - dice.mean()
+
+def hybrid_loss(pred, target, weight=None, alpha=0.5):
+    """
+    alpha: balance factor between Dice and MSE
+    weight: per-pixel weights (for MSE part)
+    """
+    mse = mse_loss(pred, target, weight=weight)
+    dice = dice_loss(pred, target)
+    return alpha * mse + (1 - alpha) * dice
+
+
 
 def background_adjacent_to_foreground(binary_image, k, footprint=None):
     if footprint is None:
@@ -335,7 +358,7 @@ for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
         # weights & losses
         weights = make_weights_from_numpy(target, k=K_RINGS, stroke_w=STROKE_W, ring_w=RING_W)
         # NOTE: using logits in Charbonnier is fine with eps
-        loss = charbonnier_loss(logits, target, weight=weights, eps=1e-3)
+        loss = hybrid_loss(logits, target, weight=weights, alpha=0.5)
 
         # Train MSE & weighted MSE (no grad)
         with torch.no_grad():
@@ -444,7 +467,7 @@ for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
                 weights = make_weights_from_numpy(target, k=K_RINGS, stroke_w=STROKE_W, ring_w=RING_W)
                 val_mseW_sum += (se * weights).sum().item() / max(1e-8, weights.sum().item())
 
-                val_loss = charbonnier_loss(logits, target, weight=weights, eps=1e-3)
+                val_loss = hybrid_loss(logits, target, weight=weights, alpha=0.5)
                 val_epoch_loss += val_loss.item()
                 val_batches += 1
 
