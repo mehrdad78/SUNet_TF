@@ -445,6 +445,102 @@ def log_weight_debug(writer, tag_prefix, step, target, weights, save_dir=None, s
 
         if save_preview:
             _save_weight_preview(save_dir, tag_prefix, step, target, weights)
+import glob
+import json
+import re
+import matplotlib.pyplot as plt
+from collections import defaultdict
+
+def plot_weight_stats_timeseries(model_dir, out_subdir="weights_plots"):
+    """
+    Scans model_dir for weights_debug_*.json files and plots:
+      - weights_mean / min / max / sum over step
+      - fg_ratio over step
+    Groups by 'tag' (e.g., train/weights vs val/weights).
+    """
+    json_paths = glob.glob(os.path.join(model_dir, "weights_debug_*_step*.json"))
+    if not json_paths:
+        print(f"[plot_weight_stats_timeseries] No JSON files found in {model_dir}")
+        return
+
+    # Collect per tag
+    series = defaultdict(lambda: {"step": [], "w_mean": [], "w_min": [], "w_max": [], "w_sum": [], "fg": []})
+
+    step_re = re.compile(r".*_step(\d+)\.json$")
+    for p in json_paths:
+        try:
+            with open(p, "r") as f:
+                obj = json.load(f)
+        except Exception as e:
+            print(f"Skip {p}: {e}")
+            continue
+
+        tag   = obj.get("tag", "unknown")
+        stepm = step_re.match(p)
+        step  = int(obj.get("step")) if obj.get("step") is not None else (int(stepm.group(1)) if stepm else 0)
+
+        wstats = obj.get("weight_stats", {})
+        series[tag]["step"].append(step)
+        series[tag]["w_mean"].append(float(wstats.get("mean", float('nan'))))
+        series[tag]["w_min"].append(float(wstats.get("min",  float('nan'))))
+        series[tag]["w_max"].append(float(wstats.get("max",  float('nan'))))
+        series[tag]["w_sum"].append(float(wstats.get("sum",  float('nan'))))
+        series[tag]["fg"].append(float(obj.get("fg_ratio", float('nan'))))
+
+    # Output dir
+    out_dir = os.path.join(model_dir, out_subdir)
+    os.makedirs(out_dir, exist_ok=True)
+
+    # Plot per tag
+    for tag, d in series.items():
+        # sort by step
+        idx = sorted(range(len(d["step"])), key=lambda i: d["step"][i])
+        xs  = [d["step"][i] for i in idx]
+
+        def _plot_one(ys, title, fname, ylabel):
+            plt.figure(figsize=(10, 5))
+            plt.plot(xs, [ys[i] for i in idx], marker='o')
+            plt.xlabel("Step")
+            plt.ylabel(ylabel)
+            plt.title(f"{title} — {tag}")
+            plt.grid(True)
+            plt.tight_layout()
+            plt.savefig(os.path.join(out_dir, fname), dpi=150)
+            plt.close()
+
+        _plot_one(d["w_mean"], "Weights Mean", f"{tag.replace('/','_')}_weights_mean.png", "Mean")
+        _plot_one(d["w_min"],  "Weights Min",  f"{tag.replace('/','_')}_weights_min.png",  "Min")
+        _plot_one(d["w_max"],  "Weights Max",  f"{tag.replace('/','_')}_weights_max.png",  "Max")
+        _plot_one(d["w_sum"],  "Weights Sum",  f"{tag.replace('/','_')}_weights_sum.png",  "Sum")
+        _plot_one(d["fg"],     "Foreground Ratio", f"{tag.replace('/','_')}_fg_ratio.png", "Foreground Ratio")
+
+    # Combined (all tags on one chart) for fast comparison
+    def _plot_combined(key, title, ylabel, fname):
+        plt.figure(figsize=(11, 6))
+        for tag, d in series.items():
+            idx = sorted(range(len(d["step"])), key=lambda i: d["step"][i])
+            xs  = [d["step"][i] for i in idx]
+            ys  = [d[key][i] for i in idx]
+            plt.plot(xs, ys, marker='o', label=tag)
+        plt.xlabel("Step")
+        plt.ylabel(ylabel)
+        plt.title(title)
+        plt.grid(True)
+        plt.legend(loc='best')
+        plt.tight_layout()
+        plt.savefig(os.path.join(out_dir, fname), dpi=150)
+        plt.close()
+
+    _plot_combined("w_mean", "Weights Mean (all tags)", "Mean", "combined_weights_mean.png")
+    _plot_combined("w_min",  "Weights Min (all tags)",  "Min",  "combined_weights_min.png")
+    _plot_combined("w_max",  "Weights Max (all tags)",  "Max",  "combined_weights_max.png")
+    _plot_combined("w_sum",  "Weights Sum (all tags)",  "Sum",  "combined_weights_sum.png")
+    _plot_combined("fg",     "Foreground Ratio (all tags)", "Foreground Ratio", "combined_fg_ratio.png")
+
+    print(f"✅ Plots written to: {out_dir}")
+
+# --- Call it (e.g., after training) ---
+# plot_weight_stats_timeseries(model_dir)
 
 
 # =========================
@@ -945,7 +1041,7 @@ writer.close()
 # Final time-series plots (optional summary)
 # =========================
 epochs_tr = list(range(1, len(loss_hist_tr) + 1))
-
+plot_weight_stats_timeseries(model_dir)
 # Train & Val Loss curves
 plt.figure(figsize=(10, 6))
 plt.plot(epochs_tr, loss_hist_tr, marker='o', label='Train Loss', color='tab:red')
