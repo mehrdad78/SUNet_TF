@@ -698,6 +698,13 @@ def plot_weight_stats_timeseries(model_dir, out_subdir="weights_plots"):
 model_restored.eval()   # چون فقط می‌خوای خروجی ببینی
 register_heatmap_hooks(model_restored)
 
+with torch.no_grad():
+    sample = next(iter(train_loader))   # یا val_loader
+    target = sample[0].cuda()
+    inp    = sample[1].cuda()
+    _ = model_restored(inp)  
+remove_heatmap_hooks()
+
 # =========================
 # Histories & best trackers
 # =========================
@@ -749,11 +756,7 @@ for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
     tr_pos_total = tr_neg_total = 0
     tr_mixed = tr_skipped = 0
     # یک batch نمونه برای عبور از مدل
-    with torch.no_grad():
-        sample = next(iter(train_loader))   # یا val_loader
-        target = sample[0].cuda()
-        inp    = sample[1].cuda()
-        _ = model_restored(inp)   # اجرای forward -> همه هوک‌ها فعال می‌شن
+ # اجرای forward -> همه هوک‌ها فعال می‌شن
 
     for i, data in enumerate(tqdm(train_loader), 0):
         for p in model_restored.parameters():
