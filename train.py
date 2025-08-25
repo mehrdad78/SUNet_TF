@@ -369,17 +369,20 @@ def _fg_ratio(t: torch.Tensor) -> float:
         return float(t_cpu.mean())
 
 def _tensor_stats(x: torch.Tensor):
-    x = x.detach()
+    x = x.detach().float().cpu()
+    # Replace NaNs with 0 before computing stats
+    x_clean = torch.where(torch.isfinite(x), x, torch.zeros_like(x))
     return {
         "shape": tuple(x.shape),
         "dtype": str(x.dtype),
         "device": str(x.device),
-        "min": float(torch.nanmin(x)),
-        "max": float(torch.nanmax(x)),
-        "mean": float(torch.nanmean(x)),
-        "sum": float(torch.nansum(x)),
+        "min": float(x_clean.min().item()) if x.numel() else float('nan'),
+        "max": float(x_clean.max().item()) if x.numel() else float('nan'),
+        "mean": float(x_clean.mean().item()) if x.numel() else float('nan'),
+        "sum": float(x_clean.sum().item()) if x.numel() else float('nan'),
         "finite": bool(torch.isfinite(x).all())
     }
+
 
 def log_weight_debug(writer, tag_prefix, step, target, weights):
     """Logs scalars + histograms to TensorBoard safely."""
