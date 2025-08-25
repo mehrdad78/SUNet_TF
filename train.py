@@ -473,7 +473,7 @@ for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
         # weights & losses
         weights = make_weights_from_numpy(target, k=K_RINGS, stroke_w=STROKE_W, ring_w=RING_W)
         # Log once per N steps to avoid spam (adjust N as you like)
-        N = 50
+        N = 20
         global_step = (epoch - 1) * len(train_loader) + i
         if global_step % N == 0:
             log_weight_debug(writer, 'train/weights', global_step, target, weights)
@@ -593,7 +593,7 @@ for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
 
                 weights = make_weights_from_numpy(target, k=K_RINGS, stroke_w=STROKE_W, ring_w=RING_W)
                 # after weights = ...
-                if (epoch % VAL_AFTER) == 0 and (ii % 20 == 0):
+                if (epoch % VAL_AFTER) == 0 and (ii <=5):
                     step = epoch * 100000 + ii  # unique-ish step for TB
                     log_weight_debug(writer, 'val/weights', step, target, weights)
                 ii += 1
