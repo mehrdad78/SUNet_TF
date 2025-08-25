@@ -21,7 +21,10 @@ from data_RGB import get_training_data, get_validation_data
 import utils
 from utils import network_parameters
 
-
+# =========================
+# Settings you can tweak
+# =========================
+# ---- color/style palette (split-based colors) ----
 SPLIT_COLOR = {'train':'tab:blue','val':'tab:red','test':'tab:green'}
 # optional: markers & linestyles so different metrics remain distinguishable
 MARK = {'auroc':'o', 'auprc':'x', 'loss':'^', 'mse':'s', 'mse_w':'d'}
@@ -63,6 +66,71 @@ with open('training.yaml', 'r') as config:
 Train = opt['TRAINING']
 OPT = opt['OPTIM']
 
+def _to_gray_if_rgb(t):
+    """Convert RGB (B,3,H,W) to grayscale, else return unchanged."""
+    if t.size(1) == 1:
+        return t
+    r, g, b = t[:,0:1], t[:,1:2], t[:,2:3]
+    return 0.2989 * r + 0.5870 * g + 0.1140 * b
+
+@torch.no_grad()
+def plot_some_weight_maps(loader, num_batches=2, max_per_batch=3,
+                          k=K_RINGS, stroke_w=STROKE_W, ring_w=RING_W,
+                          normalize_to_mean_one=NORM_MEAN_ONE):
+    """
+    Visualize Input / Target / Weight map for a few samples.
+    loader: DataLoader (train_loader or val_loader)
+    num_batches: how many batches to visualize
+    max_per_batch: how many samples per batch
+    """
+    shown = 0
+    for bi, batch in enumerate(loader):
+        if shown >= num_batches:
+            break
+
+        target = batch[0].cuda()   # (B,C,H,W)
+        input_  = batch[1].cuda()
+
+        # Make single-channel targets (same as in training)
+        target_gray = _to_gray_if_rgb(target)
+        # If dataset gives [0,255], normalize:
+        if target_gray.max() > 1.0:
+            target_gray = target_gray / 255.0
+
+        # Build weights from TARGET
+        weights = make_weights_from_numpy(
+            target_gray, k=k, stroke_w=stroke_w, ring_w=ring_w,
+            normalize_to_mean_one=normalize_to_mean_one
+        )
+
+        B = min(input_.size(0), max_per_batch)
+        for i in range(B):
+            inp_vis = _to_gray_if_rgb(input_[i:i+1]).squeeze().cpu().numpy()
+            tgt_vis = target_gray[i:i+1].squeeze().cpu().numpy()
+            w_vis   = weights[i:i+1].squeeze().cpu().numpy()
+
+            w_min, w_mean, w_max = float(w_vis.min()), float(w_vis.mean()), float(w_vis.max())
+
+            fig, axes = plt.subplots(1, 3, figsize=(14, 4))
+            axes[0].imshow(inp_vis, cmap='gray')
+            axes[0].set_title('Input')
+            axes[0].axis('off')
+
+            axes[1].imshow(tgt_vis, cmap='gray', vmin=0, vmax=1)
+            axes[1].set_title('Target (mask)')
+            axes[1].axis('off')
+
+            im2 = axes[2].imshow(w_vis, cmap='magma')
+            axes[2].set_title(f'Weights\nmin={w_min:.2f} mean={w_mean:.2f} max={w_max:.2f}')
+            axes[2].axis('off')
+            plt.colorbar(im2, ax=axes[2], fraction=0.046, pad=0.04)
+
+            plt.tight_layout()
+            fname = os.path.join(weights_dir, f'weights_b{bi:03d}_i{i:02d}.png')
+            plt.savefig(fname, dpi=150)
+            plt.close(fig)
+
+        shown += 1
 # =========================
 # Build model
 # =========================
@@ -164,6 +232,9 @@ if test_dir and os.path.isdir(test_dir):
     test_dataset = get_validation_data(test_dir, {'patch_size': Train['VAL_PS']})
     test_loader = DataLoader(dataset=test_dataset, batch_size=1, shuffle=False,
                              num_workers=0, drop_last=False)
+    
+plot_some_weight_maps(train_loader, num_batches=1, max_per_batch=2)
+plot_some_weight_maps(val_loader,   num_batches=1, max_per_batch=2)
 
 # =========================
 # Info
@@ -183,6 +254,17 @@ print('------------------------------------------------------------------')
 # =========================
 # Loss & helpers
 # =========================
+# =========================
+# Visualize Weight Matrices
+# =========================
+import matplotlib.pyplot as plt
+
+# Save folder
+weights_dir = os.path.join(plots_root, 'weights')
+os.makedirs(weights_dir, exist_ok=True)
+
+
+
 
 def charbonnier_loss(pred, target, weight=None, eps=1e-3):
     diff = pred - target
@@ -195,29 +277,6 @@ def mse_loss(pred, target, weight=None):
     if weight is None:
         return diff.mean()
     return (diff * weight).sum() / weight.sum().clamp(min=1e-8)
-
-def dice_loss(pred, target, smooth=1.0):
-    """
-    pred: logits or probs of shape (B,1,H,W)
-    target: same shape
-    """
-    pred = torch.sigmoid(pred)   # convert logits → probs
-    target = target.float()
-
-    intersection = (pred * target).sum(dim=(1,2,3))
-    union = pred.sum(dim=(1,2,3)) + target.sum(dim=(1,2,3))
-    dice = (2.0 * intersection + smooth) / (union + smooth)
-    return 1.0 - dice.mean()
-
-def hybrid_loss(pred, target, weight=None, alpha=0.5):
-    """
-    alpha: balance factor between Dice and MSE
-    weight: per-pixel weights (for MSE part)
-    """
-    mse = mse_loss(pred, target, weight=weight)
-    dice = dice_loss(pred, target)
-    return alpha * mse + (1 - alpha) * dice
-
 
 
 def background_adjacent_to_foreground(binary_image, k, footprint=None):
@@ -355,7 +414,7 @@ for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
         # weights & losses
         weights = make_weights_from_numpy(target, k=K_RINGS, stroke_w=STROKE_W, ring_w=RING_W)
         # NOTE: using logits in Charbonnier is fine with eps
-        loss = hybrid_loss(logits, target, weight=weights, alpha=0.5)
+        loss = charbonnier_loss(logits, target, weight=weights, eps=1e-3)
 
         # Train MSE & weighted MSE (no grad)
         with torch.no_grad():
@@ -464,7 +523,7 @@ for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
                 weights = make_weights_from_numpy(target, k=K_RINGS, stroke_w=STROKE_W, ring_w=RING_W)
                 val_mseW_sum += (se * weights).sum().item() / max(1e-8, weights.sum().item())
 
-                val_loss = hybrid_loss(logits, target, weight=weights, alpha=0.5)
+                val_loss = charbonnier_loss(logits, target, weight=weights, eps=1e-3)
                 val_epoch_loss += val_loss.item()
                 val_batches += 1
 
