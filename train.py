@@ -207,7 +207,7 @@ def mse_loss(pred, target, weight=None):
 def background_adjacent_to_foreground(binary_image, k, footprint=None):
     if footprint is None:
         footprint = np.ones((3, 3), dtype=bool)  # 8-neighborhood
-    prev = (binary_image > 0).astype(np.uint8)
+    prev = np.squeeze(binary_image > 0).astype(np.uint8)  # تضمین ۲D
     neigh_masks = []
     for _ in range(k):  # exactly k rings
         dil = binary_dilation(prev.astype(bool), footprint=footprint).astype(np.uint8)
@@ -215,6 +215,7 @@ def background_adjacent_to_foreground(binary_image, k, footprint=None):
         neigh_masks.append(ring)
         prev = dil
     return neigh_masks
+
 
 
 def make_weight_matrix(binary_image, masks, stroke_w=STROKE_W, masks_w=RING_W, bg_min=0.0):
