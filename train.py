@@ -473,7 +473,7 @@ for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
         # weights & losses
         weights = make_weights_from_numpy(target, k=K_RINGS, stroke_w=STROKE_W, ring_w=RING_W)
         # Log once per N steps to avoid spam (adjust N as you like)
-        N = 10  # log every 10 global steps after epoch 1
+        N = 5  # log every 10 global steps after epoch 1
         global_step = (epoch - 1) * len(train_loader) + i
 
         if epoch <= 5 or global_step % N == 0:
