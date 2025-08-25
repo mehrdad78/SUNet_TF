@@ -206,15 +206,28 @@ def mse_loss(pred, target, weight=None):
 
 def background_adjacent_to_foreground(binary_image, k, footprint=None):
     if footprint is None:
-        footprint = np.ones((3, 3), dtype=bool)  # 8-neighborhood
-    prev = np.squeeze(binary_image > 0).astype(np.uint8)  # تضمین ۲D
+        footprint = np.ones((3, 3), dtype=bool)
+
+    # Ensure numpy array
+    prev = np.array(binary_image, dtype=np.uint8)
+
+    # Force 2D
+    if prev.ndim == 3 and prev.shape[0] == 1:
+        prev = prev[0]          # (1,H,W) → (H,W)
+    if prev.ndim == 4 and prev.shape[0] == 1 and prev.shape[1] == 1:
+        prev = prev[0, 0]       # (1,1,H,W) → (H,W)
+
+    if prev.ndim != 2:
+        raise ValueError(f"Expected 2D mask, got shape={prev.shape}")
+
     neigh_masks = []
-    for _ in range(k):  # exactly k rings
+    for _ in range(k):
         dil = binary_dilation(prev.astype(bool), footprint=footprint).astype(np.uint8)
         ring = (dil - prev).astype(bool)
         neigh_masks.append(ring)
         prev = dil
     return neigh_masks
+
 
 
 
@@ -265,8 +278,7 @@ def debug_plot_weighting(target_tensor, save_dir, name="sample",
     tgt_np = target_tensor.squeeze().cpu().numpy()
     if tgt_np.max() <= 1.0:
         bin_img = (tgt_np > 0.5).astype(np.uint8)
-    else:
-        bin_img = (tgt_np > 127).astype(np.uint8)
+
 
     # Step 1: ساخت رینگ‌ها
     masks = background_adjacent_to_foreground(bin_img, k)
