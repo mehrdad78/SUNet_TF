@@ -120,6 +120,10 @@ os.makedirs(overlay_tv_d, exist_ok=True)
 # NEW: combined Train+Val+Test overlay
 overlay_tvt_d = os.path.join(plots_root, 'overlay', 'train_val_test')
 os.makedirs(overlay_tvt_d, exist_ok=True)
+# Directory for weight visualizations
+weights_dir = os.path.join(plots_root, 'weights')
+os.makedirs(weights_dir, exist_ok=True)
+
 
 # =========================
 # Optimizer / Scheduler
