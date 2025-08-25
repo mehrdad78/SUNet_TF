@@ -228,6 +228,22 @@ def background_adjacent_to_foreground(binary_image, k, footprint=None):
         prev = dil
     return neigh_masks
 
+def to_single_channel(np_img):
+    # If already 2D, return
+    if np_img.ndim == 2:
+        return np_img
+    # If 3D with 3 channels, convert to grayscale
+    if np_img.ndim == 3 and np_img.shape[0] == 3:
+        # assume CHW format (3,H,W)
+        r, g, b = np_img[0], np_img[1], np_img[2]
+        gray = 0.2989 * r + 0.5870 * g + 0.1140 * b
+        return gray
+    if np_img.ndim == 3 and np_img.shape[-1] == 3:
+        # assume HWC format (H,W,3)
+        r, g, b = np_img[...,0], np_img[...,1], np_img[...,2]
+        gray = 0.2989 * r + 0.5870 * g + 0.1140 * b
+        return gray
+    raise ValueError(f"Unexpected target shape: {np_img.shape}")
 
 
 
@@ -276,6 +292,7 @@ def debug_plot_weighting(target_tensor, save_dir, name="sample",
     os.makedirs(save_dir, exist_ok=True)
 
     tgt_np = target_tensor.squeeze().cpu().numpy()
+    tgt_np = to_single_channel(tgt_np) 
     if tgt_np.max() <= 1.0:
         bin_img = (tgt_np > 0.5).astype(np.uint8)
 
