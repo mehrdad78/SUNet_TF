@@ -402,7 +402,7 @@ def log_weight_debug(writer, tag_prefix, step, target, weights):
     writer.add_histogram(f'{tag_prefix}/target_hist',  target.detach().cpu(),  step)
 
     # Occasional console prints (only every ~200 steps)
-    if step % 200 == 0:
+    if step % 50 == 0:
         print(f"[{tag_prefix}@{step}] target stats={tstats}  weights stats={wstats}  fg_ratio={fg:.4f}")
 
 # =========================
@@ -473,9 +473,10 @@ for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
         # weights & losses
         weights = make_weights_from_numpy(target, k=K_RINGS, stroke_w=STROKE_W, ring_w=RING_W)
         # Log once per N steps to avoid spam (adjust N as you like)
-        N = 10
+        N = 10  # log every 10 global steps after epoch 1
         global_step = (epoch - 1) * len(train_loader) + i
-        if global_step % N == 0:
+
+        if epoch <= 5 or global_step % N == 0:
             log_weight_debug(writer, 'train/weights', global_step, target, weights)
 
         # Safety checks (catch silent failures)
@@ -593,7 +594,7 @@ for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
 
                 weights = make_weights_from_numpy(target, k=K_RINGS, stroke_w=STROKE_W, ring_w=RING_W)
                 # after weights = ...
-                if (epoch % VAL_AFTER) == 0 and (ii <=5):
+                if (epoch % VAL_AFTER) == 0 and (ii <=5) and epoch <= 5:
                     step = epoch * 100000 + ii  # unique-ish step for TB
                     log_weight_debug(writer, 'val/weights', step, target, weights)
                 ii += 1
