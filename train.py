@@ -384,26 +384,68 @@ def _tensor_stats(x: torch.Tensor):
     }
 
 
-def log_weight_debug(writer, tag_prefix, step, target, weights):
-    """Logs scalars + histograms to TensorBoard safely."""
+import json
+import matplotlib.pyplot as plt
+
+def _save_weight_preview(save_dir, tag_prefix, step, target, weights):
+    """Save a small 2-panel preview: target (grayscale) and weights (magma)."""
+    os.makedirs(save_dir, exist_ok=True)
+    # pick the first sample in batch for a consistent preview
+    tgt = target[0, 0].detach().float().cpu().numpy()
+    w   = weights[0, 0].detach().float().cpu().numpy()
+
+    fig, axes = plt.subplots(1, 2, figsize=(10, 4))
+    axes[0].imshow(tgt, cmap='gray', vmin=0, vmax=1)
+    axes[0].set_title('Target (grayscale)')
+    axes[0].axis('off')
+
+    im = axes[1].imshow(w, cmap='magma')
+    axes[1].set_title('Weights')
+    axes[1].axis('off')
+    plt.colorbar(im, ax=axes[1], fraction=0.046, pad=0.04)
+
+    plt.tight_layout()
+    fname = os.path.join(save_dir, f"{tag_prefix.replace('/','_')}_step{step:07d}.png")
+    plt.savefig(fname, dpi=150)
+    plt.close(fig)
+
+
+def log_weight_debug(writer, tag_prefix, step, target, weights, save_dir=None, save_preview=True):
+    """Logs to TensorBoard; optionally saves JSON stats + preview PNG to checkpoints."""
     fg = _fg_ratio(target)
     wstats = _tensor_stats(weights)
     tstats = _tensor_stats(target)
 
-    # Scalars
+    # --- TensorBoard scalars ---
     writer.add_scalar(f'{tag_prefix}/target_fg_ratio', fg, step)
     writer.add_scalar(f'{tag_prefix}/weights_mean', wstats["mean"], step)
     writer.add_scalar(f'{tag_prefix}/weights_min',  wstats["min"],  step)
     writer.add_scalar(f'{tag_prefix}/weights_max',  wstats["max"],  step)
     writer.add_scalar(f'{tag_prefix}/weights_sum',  wstats["sum"],  step)
 
-    # Histograms (cheap but informative)
+    # --- TensorBoard histograms ---
     writer.add_histogram(f'{tag_prefix}/weights_hist', weights.detach().cpu(), step)
     writer.add_histogram(f'{tag_prefix}/target_hist',  target.detach().cpu(),  step)
 
-    # Occasional console prints (only every ~200 steps)
     if step % 50 == 0:
         print(f"[{tag_prefix}@{step}] target stats={tstats}  weights stats={wstats}  fg_ratio={fg:.4f}")
+
+    # --- Save to checkpoints folder (JSON + optional preview PNG) ---
+    if save_dir is not None:
+        os.makedirs(save_dir, exist_ok=True)
+        json_path = os.path.join(save_dir, f"weights_debug_{tag_prefix.replace('/','_')}_step{step:07d}.json")
+        with open(json_path, "w") as f:
+            json.dump({
+                "tag": tag_prefix,
+                "step": int(step),
+                "target_stats": tstats,
+                "weight_stats": wstats,
+                "fg_ratio": float(fg),
+            }, f, indent=2)
+
+        if save_preview:
+            _save_weight_preview(save_dir, tag_prefix, step, target, weights)
+
 
 # =========================
 # Histories & best trackers
@@ -477,7 +519,7 @@ for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
         global_step = (epoch - 1) * len(train_loader) + i
 
         if epoch <= 5 or global_step % N == 0:
-            log_weight_debug(writer, 'train/weights', global_step, target, weights)
+            log_weight_debug(writer, 'train/weights', global_step, target, weights,save_dir=model_dir)
 
         # Safety checks (catch silent failures)
         assert weights.shape == target.shape, f"weights {weights.shape} vs target {target.shape}"
@@ -596,7 +638,7 @@ for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
                 # after weights = ...
                 if (epoch % VAL_AFTER) == 0 and (ii <=5) and epoch <= 5:
                     step = epoch * 100000 + ii  # unique-ish step for TB
-                    log_weight_debug(writer, 'val/weights', step, target, weights)
+                    log_weight_debug(writer, 'val/weights', step, target, weights,save_dir=model_dir)
                 ii += 1
 
                 val_mseW_sum += (se * weights).sum().item() / max(1e-8, weights.sum().item())
