@@ -576,7 +576,8 @@ for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
         mixed_items = skipped_single = 0
 
         with torch.no_grad():
-            for ii ,data_val in val_loader:
+            ii = 0
+            for data_val in val_loader:
                 target = data_val[0].cuda()
                 input_  = data_val[1].cuda()
 
@@ -595,6 +596,7 @@ for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
                 if (epoch % VAL_AFTER) == 0 and (ii % 20 == 0):
                     step = epoch * 100000 + ii  # unique-ish step for TB
                     log_weight_debug(writer, 'val/weights', step, target, weights)
+                ii += 1
 
                 val_mseW_sum += (se * weights).sum().item() / max(1e-8, weights.sum().item())
 
