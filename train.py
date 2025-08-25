@@ -188,63 +188,7 @@ print('------------------------------------------------------------------')
 import matplotlib.pyplot as plt
 import os
 
-def debug_plot_weighting(target_tensor, save_dir, name="sample",
-                         k=K_RINGS, stroke_w=STROKE_W, ring_w=RING_W):
-    """
-    target_tensor: (1,1,H,W) torch tensor (یک تصویر)
-    save_dir: فولدر خروجی (مثلاً weights_dir)
-    name: اسم فایل خروجی
-    """
-    os.makedirs(save_dir, exist_ok=True)
 
-    tgt_np = target_tensor.squeeze().cpu().numpy()
-    if tgt_np.max() <= 1.0:
-        bin_img = (tgt_np > 0.5).astype(np.uint8)
-    else:
-        bin_img = (tgt_np > 127).astype(np.uint8)
-
-    # Step 1: ساخت رینگ‌ها
-    masks = background_adjacent_to_foreground(bin_img, k)
-
-    # Step 2: وزن نهایی
-    w_np = make_weight_matrix(
-        bin_img, masks, stroke_w=float(stroke_w), masks_w=list(ring_w)
-    ).astype(np.float32)
-
-    # Step 3: پلات کل پروسه
-    cols = 3 + len(masks)  # Target, Binarized, Rings..., Final
-    fig, axes = plt.subplots(1, cols, figsize=(4*cols, 4))
-
-    axes[0].imshow(tgt_np, cmap="gray")
-    axes[0].set_title("Target (raw)")
-    axes[0].axis("off")
-
-    axes[1].imshow(bin_img, cmap="gray")
-    axes[1].set_title("Binarized")
-    axes[1].axis("off")
-
-    for i, ring in enumerate(masks):
-        axes[2+i].imshow(ring, cmap="gray")
-        axes[2+i].set_title(f"Ring {i+1}")
-        axes[2+i].axis("off")
-
-    im = axes[-1].imshow(w_np, cmap="magma")
-    axes[-1].set_title("Final Weights")
-    axes[-1].axis("off")
-    plt.colorbar(im, ax=axes[-1], fraction=0.046, pad=0.04)
-
-    plt.tight_layout()
-
-    # ذخیره در فایل
-    out_path = os.path.join(save_dir, f"weight_debug_{name}.png")
-    plt.savefig(out_path, dpi=150)
-    plt.close(fig)
-
-    print(f"✅ Weighting debug plot saved: {out_path}")
-
-sample = next(iter(train_loader))
-target = sample[0][0:1].cuda()   # فقط یک تصویر
-debug_plot_weighting(target, save_dir=weights_dir, name="train_example")
 
 def charbonnier_loss(pred, target, weight=None, eps=1e-3):
     diff = pred - target
@@ -308,7 +252,63 @@ def make_weights_from_numpy(target_t, k=K_RINGS, stroke_w=STROKE_W, ring_w=RING_
     if normalize_to_mean_one:
         w = w / w.mean().clamp(min=1e-8)
     return w
+def debug_plot_weighting(target_tensor, save_dir, name="sample",
+                         k=K_RINGS, stroke_w=STROKE_W, ring_w=RING_W):
+    """
+    target_tensor: (1,1,H,W) torch tensor (یک تصویر)
+    save_dir: فولدر خروجی (مثلاً weights_dir)
+    name: اسم فایل خروجی
+    """
+    os.makedirs(save_dir, exist_ok=True)
 
+    tgt_np = target_tensor.squeeze().cpu().numpy()
+    if tgt_np.max() <= 1.0:
+        bin_img = (tgt_np > 0.5).astype(np.uint8)
+    else:
+        bin_img = (tgt_np > 127).astype(np.uint8)
+
+    # Step 1: ساخت رینگ‌ها
+    masks = background_adjacent_to_foreground(bin_img, k)
+
+    # Step 2: وزن نهایی
+    w_np = make_weight_matrix(
+        bin_img, masks, stroke_w=float(stroke_w), masks_w=list(ring_w)
+    ).astype(np.float32)
+
+    # Step 3: پلات کل پروسه
+    cols = 3 + len(masks)  # Target, Binarized, Rings..., Final
+    fig, axes = plt.subplots(1, cols, figsize=(4*cols, 4))
+
+    axes[0].imshow(tgt_np, cmap="gray")
+    axes[0].set_title("Target (raw)")
+    axes[0].axis("off")
+
+    axes[1].imshow(bin_img, cmap="gray")
+    axes[1].set_title("Binarized")
+    axes[1].axis("off")
+
+    for i, ring in enumerate(masks):
+        axes[2+i].imshow(ring, cmap="gray")
+        axes[2+i].set_title(f"Ring {i+1}")
+        axes[2+i].axis("off")
+
+    im = axes[-1].imshow(w_np, cmap="magma")
+    axes[-1].set_title("Final Weights")
+    axes[-1].axis("off")
+    plt.colorbar(im, ax=axes[-1], fraction=0.046, pad=0.04)
+
+    plt.tight_layout()
+
+    # ذخیره در فایل
+    out_path = os.path.join(save_dir, f"weight_debug_{name}.png")
+    plt.savefig(out_path, dpi=150)
+    plt.close(fig)
+
+    print(f"✅ Weighting debug plot saved: {out_path}")
+
+sample = next(iter(train_loader))
+target = sample[0][0:1].cuda()   # فقط یک تصویر
+debug_plot_weighting(target, save_dir=weights_dir, name="train_example")
 
 def _collect_scores(y_score, y_true, buf_scores, buf_trues, cap, collected_count):
     """Append scores/labels with an optional global cap to limit memory."""
