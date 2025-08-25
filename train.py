@@ -426,6 +426,70 @@ def make_weights_from_numpy(target_t, k=K_RINGS, stroke_w=STROKE_W, ring_w=RING_
               f"norm_mean_one={normalize_to_mean_one}")
 
     return w
+import matplotlib.pyplot as plt
+
+import matplotlib.pyplot as plt
+import os
+
+def debug_plot_weighting(target_tensor, save_dir, name="sample",
+                         k=K_RINGS, stroke_w=STROKE_W, ring_w=RING_W):
+    """
+    target_tensor: (1,1,H,W) torch tensor (یک تصویر)
+    save_dir: فولدر خروجی (مثلاً weights_dir)
+    name: اسم فایل خروجی
+    """
+    os.makedirs(save_dir, exist_ok=True)
+
+    tgt_np = target_tensor.squeeze().cpu().numpy()
+    if tgt_np.max() <= 1.0:
+        bin_img = (tgt_np > 0.5).astype(np.uint8)
+    else:
+        bin_img = (tgt_np > 127).astype(np.uint8)
+
+    # Step 1: ساخت رینگ‌ها
+    masks = background_adjacent_to_foreground(bin_img, k)
+
+    # Step 2: وزن نهایی
+    w_np = make_weight_matrix(
+        bin_img, masks, stroke_w=float(stroke_w), masks_w=list(ring_w)
+    ).astype(np.float32)
+
+    # Step 3: پلات کل پروسه
+    cols = 3 + len(masks)  # Target, Binarized, Rings..., Final
+    fig, axes = plt.subplots(1, cols, figsize=(4*cols, 4))
+
+    axes[0].imshow(tgt_np, cmap="gray")
+    axes[0].set_title("Target (raw)")
+    axes[0].axis("off")
+
+    axes[1].imshow(bin_img, cmap="gray")
+    axes[1].set_title("Binarized")
+    axes[1].axis("off")
+
+    for i, ring in enumerate(masks):
+        axes[2+i].imshow(ring, cmap="gray")
+        axes[2+i].set_title(f"Ring {i+1}")
+        axes[2+i].axis("off")
+
+    im = axes[-1].imshow(w_np, cmap="magma")
+    axes[-1].set_title("Final Weights")
+    axes[-1].axis("off")
+    plt.colorbar(im, ax=axes[-1], fraction=0.046, pad=0.04)
+
+    plt.tight_layout()
+
+    # ذخیره در فایل
+    out_path = os.path.join(save_dir, f"weight_debug_{name}.png")
+    plt.savefig(out_path, dpi=150)
+    plt.close(fig)
+
+    print(f"✅ Weighting debug plot saved: {out_path}")
+
+
+sample = next(iter(train_loader))
+target = sample[0][0:1].cuda()  # فقط یک تصویر
+debug_plot_weighting(target)
+
 
 def _to_gray_if_rgb(t):
     """Convert RGB (B,3,H,W) to grayscale, else return unchanged."""
@@ -693,17 +757,7 @@ def plot_weight_stats_timeseries(model_dir, out_subdir="weights_plots"):
 
     print(f"✅ Plots written to: {out_dir}")
 
-# --- Call it (e.g., after training) ---
-# plot_weight_stats_timeseries(model_dir)
-model_restored.eval()   # چون فقط می‌خوای خروجی ببینی
-register_heatmap_hooks(model_restored)
 
-with torch.no_grad():
-    sample = next(iter(train_loader))   # یا val_loader
-    target = sample[0].cuda()
-    inp    = sample[1].cuda()
-    _ = model_restored(inp)  
-remove_heatmap_hooks()
 
 # =========================
 # Histories & best trackers
@@ -775,11 +829,7 @@ for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
         # weights & losses
         weights = make_weights_from_numpy(target, k=K_RINGS, stroke_w=STROKE_W, ring_w=RING_W)
         # Log once per N steps to avoid spam (adjust N as you like)
-        N = 5  # log every 10 global steps after epoch 1
-        global_step = (epoch - 1) * len(train_loader) + i
-
-        if epoch <= 5 or global_step % N == 0:
-            log_weight_debug(writer, 'train/weights', global_step, target, weights,save_dir=model_dir)
+        
 
         # Safety checks (catch silent failures)
         assert weights.shape == target.shape, f"weights {weights.shape} vs target {target.shape}"
@@ -896,9 +946,6 @@ for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
 
                 weights = make_weights_from_numpy(target, k=K_RINGS, stroke_w=STROKE_W, ring_w=RING_W)
                 # after weights = ...
-                if (epoch % VAL_AFTER) == 0 and (ii <=5) and epoch <= 5:
-                    step = epoch * 100000 + ii  # unique-ish step for TB
-                    log_weight_debug(writer, 'val/weights', step, target, weights,save_dir=model_dir)
                 ii += 1
 
                 val_mseW_sum += (se * weights).sum().item() / max(1e-8, weights.sum().item())
