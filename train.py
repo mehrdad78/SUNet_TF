@@ -488,7 +488,7 @@ def debug_plot_weighting(target_tensor, save_dir, name="sample",
 
 sample = next(iter(train_loader))
 target = sample[0][0:1].cuda()  # فقط یک تصویر
-debug_plot_weighting(target)
+debug_plot_weighting(target, save_dir=weights_dir, name="train_example")
 
 
 def _to_gray_if_rgb(t):
