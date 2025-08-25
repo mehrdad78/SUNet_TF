@@ -74,6 +74,7 @@ model_restored = SUNet_model(opt)
 p_number = network_parameters(model_restored)
 model_restored.cuda()
 mode = opt['MODEL']['MODE']
+# === اینجا اضافه کن ===
 
 # Dirs
 model_dir = os.path.join(Train['SAVE_DIR'], mode, 'models')
@@ -694,7 +695,8 @@ def plot_weight_stats_timeseries(model_dir, out_subdir="weights_plots"):
 
 # --- Call it (e.g., after training) ---
 # plot_weight_stats_timeseries(model_dir)
-
+model_restored.eval()   # چون فقط می‌خوای خروجی ببینی
+register_heatmap_hooks(model_restored)
 
 # =========================
 # Histories & best trackers
@@ -746,6 +748,12 @@ for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
     tr_collected = 0
     tr_pos_total = tr_neg_total = 0
     tr_mixed = tr_skipped = 0
+    # یک batch نمونه برای عبور از مدل
+    with torch.no_grad():
+        sample = next(iter(train_loader))   # یا val_loader
+        target = sample[0].cuda()
+        inp    = sample[1].cuda()
+        _ = model_restored(inp)   # اجرای forward -> همه هوک‌ها فعال می‌شن
 
     for i, data in enumerate(tqdm(train_loader), 0):
         for p in model_restored.parameters():
@@ -984,11 +992,6 @@ for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
             pos_total_t = neg_total_t = 0; mixed_items_t = skipped_single_t = 0
             collected_t = 0
             # یک بتچ از train_loader یا val_loader بگیر
-            with torch.no_grad():
-                sample = next(iter(train_loader))  # یا val_loader
-                target = sample[0].cuda()
-                inp    = sample[1].cuda()
-                _ = model_restored(inp)  # همین یک عبور کافی است
 
             with torch.no_grad():
                 for data_test in test_loader:
