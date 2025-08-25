@@ -576,7 +576,7 @@ for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
         mixed_items = skipped_single = 0
 
         with torch.no_grad():
-            for data_val in val_loader:
+            for ii ,data_val in val_loader:
                 target = data_val[0].cuda()
                 input_  = data_val[1].cuda()
 
