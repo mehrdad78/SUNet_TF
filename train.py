@@ -190,6 +190,159 @@ print('------------------------------------------------------------------')
 # =========================
 # Loss & helpers
 # =========================
+# ========= Heatmap hooks for ALL intermediate tensors (2D heatmaps) =========
+import os, math, re, gc
+import torch
+import torch.nn as nn
+import matplotlib.pyplot as plt
+import numpy as np
+
+# ------------ Configs ------------
+ACT_OUT_DIR = os.path.join(model_dir, "activations_heatmaps")
+os.makedirs(ACT_OUT_DIR, exist_ok=True)
+
+# کاهش کانال‌ها به 2D: 'mean' یا 'max' یا 'first'
+REDUCE_TO_2D = 'mean'
+# چند کانال «برگزیده» علاوه بر نقشه‌ی میانگین ذخیره شود؟ (براساس واریانس)
+TOPK_CHANNELS = 4
+# فقط از اولین batch خروجی بگیر؟
+ONLY_FIRST_BATCH = True
+# محدودیت تعداد لایه‌ها (0 یعنی بدون محدودیت)
+MAX_LAYERS = 0
+
+# چه ماژول‌هایی را مانیتور کنیم؟
+MONITORED_TYPES = (
+    nn.Conv2d, nn.BatchNorm2d,
+    nn.ReLU, nn.LeakyReLU, nn.SiLU, nn.ELU, nn.GELU,
+    nn.MaxPool2d, nn.AvgPool2d, nn.AdaptiveAvgPool2d,
+    nn.Upsample, nn.ConvTranspose2d,
+)
+
+# ------------ Helpers ------------
+def _sanitize(name: str) -> str:
+    return re.sub(r'[^a-zA-Z0-9_.\-]+', '_', name)
+
+def _to_numpy_2d(t: torch.Tensor) -> np.ndarray:
+    """
+    ورودی می‌تواند 2D/3D/4D باشد:
+      - (H,W) -> همان
+      - (C,H,W) یا (B,C,H,W) -> کاهش به 2D با REDUCE_TO_2D
+    """
+    with torch.no_grad():
+        t = t.detach()
+        # اگر NaN/Inf باشد، صفر کنیم تا رسم خراب نشود
+        t = torch.where(torch.isfinite(t), t, torch.zeros_like(t))
+        if t.dim() == 2:
+            arr = t.float().cpu().numpy()
+            return arr
+        if t.dim() == 3:
+            C, H, W = t.shape
+            if REDUCE_TO_2D == 'mean':
+                return t.mean(0).float().cpu().numpy()
+            elif REDUCE_TO_2D == 'max':
+                return t.max(0).values.float().cpu().numpy()
+            else:  # 'first'
+                return t[0].float().cpu().numpy()
+        if t.dim() == 4:
+            B, C, H, W = t.shape
+            x = t[0]  # اولین نمونه‌ی batch
+            if REDUCE_TO_2D == 'mean':
+                return x.mean(0).float().cpu().numpy()
+            elif REDUCE_TO_2D == 'max':
+                return x.max(0).values.float().cpu().numpy()
+            else:  # 'first'
+                return x[0].float().cpu().numpy()
+        # سایر ابعاد را سعی می‌کنیم به آخرین دو بعد کاهش دهیم
+        v = t.flatten(start_dim=0, end_dim=t.dim()-3)
+        v = v.mean(0)  # میانگین همه ابعاد اضافه
+        return v.float().cpu().numpy()
+
+def _save_heatmap(arr2d: np.ndarray, out_path: str, title: str = None):
+    plt.figure(figsize=(5,5))
+    plt.imshow(arr2d, cmap='hot', interpolation='nearest')  # مثل عکس نمونه
+    plt.colorbar(label='Value')
+    if title:
+        plt.title(title)
+    plt.axis('off')
+    plt.tight_layout()
+    plt.savefig(out_path, dpi=150)
+    plt.close()
+
+def _save_topk_channels(x: torch.Tensor, layer_name: str, step_tag: str):
+    """
+    علاوه بر نقشه‌ی میانگین، K کانالِ با واریانس بیشتر را هم ذخیره می‌کند (کمک به دیدن جزییات).
+    فقط وقتی ابعاد 4D/3D باشد اجرا می‌شود.
+    """
+    with torch.no_grad():
+        if x.dim() == 4:    # (B,C,H,W)
+            x0 = x[0]
+        elif x.dim() == 3:  # (C,H,W)
+            x0 = x
+        else:
+            return
+        C = x0.size(0)
+        if C <= 1 or TOPK_CHANNELS <= 0: return
+        # واریانس هر کانال
+        var = x0.float().flatten(1).var(dim=1)  # [C]
+        k = min(TOPK_CHANNELS, C)
+        topk = torch.topk(var, k=k).indices.tolist()
+        for rank, ch in enumerate(topk):
+            arr = x0[ch].detach().float().cpu().numpy()
+            outp = os.path.join(ACT_OUT_DIR, f"{_sanitize(layer_name)}__{step_tag}__ch{ch:04d}_r{rank+1}.png")
+            _save_heatmap(arr, outp, title=f"{layer_name}  ch={ch} (rank {rank+1})")
+
+# ------------ Hook machinery ------------
+_hooks = []
+_seen_a_batch = False
+_layer_counter = 0
+
+def _hook_factory(layer_name: str):
+    def _hook(module, input, output):
+        global _seen_a_batch, _layer_counter
+        if ONLY_FIRST_BATCH and _seen_a_batch:
+            return
+        if MAX_LAYERS and _layer_counter >= MAX_LAYERS:
+            return
+
+        # بعضی لایه‌ها tuple یا dict خروجی می‌دهند
+        out = output
+        if isinstance(out, (tuple, list)):
+            if len(out) == 0: return
+            out = out[0]
+        if isinstance(out, dict):
+            # اگر کلید معمولی داشت مثل 'out' یا 'attn' برداریم
+            out = out.get('out', list(out.values())[0])
+
+        try:
+            # ذخیره نقشه‌ی میانگین/انتخابی به 2D
+            arr2d = _to_numpy_2d(out)
+            step_tag = "step0000000"  # برای forwardهای تک‌مرحله‌ای
+            fname = f"{_sanitize(layer_name)}__{step_tag}.png"
+            _save_heatmap(arr2d, os.path.join(ACT_OUT_DIR, fname), title=layer_name)
+
+            # ذخیره‌ی کانال‌های برگزیده
+            _save_topk_channels(out, layer_name, step_tag)
+
+            _layer_counter += 1
+        except Exception as e:
+            print(f"[heatmap-hook] skip {layer_name}: {e}")
+    return _hook
+
+def register_heatmap_hooks(model: nn.Module):
+    for name, m in model.named_modules():
+        if isinstance(m, MONITORED_TYPES):
+            _hooks.append(m.register_forward_hook(_hook_factory(name)))
+    print(f"[heatmap] registered {len(_hooks)} hooks; output dir = {ACT_OUT_DIR}")
+
+def remove_heatmap_hooks():
+    global _hooks
+    for h in _hooks:
+        try: h.remove()
+        except: pass
+    _hooks = []
+    gc.collect()
+    print("[heatmap] hooks removed.")
+# ============================================================================
 
 
 def charbonnier_loss(pred, target, weight=None, eps=1e-3):
@@ -825,10 +978,18 @@ for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
         # --- TEST (same cadence as VAL) ---
         if test_loader is not None:
             model_restored.eval()
+            register_heatmap_hooks(model_restored)
             test_mse_sum = 0.0; test_mseW_sum = 0.0; test_batches = 0
             probs_list = []; tgts_list = []
             pos_total_t = neg_total_t = 0; mixed_items_t = skipped_single_t = 0
             collected_t = 0
+            # یک بتچ از train_loader یا val_loader بگیر
+            with torch.no_grad():
+                sample = next(iter(train_loader))  # یا val_loader
+                target = sample[0].cuda()
+                inp    = sample[1].cuda()
+                _ = model_restored(inp)  # همین یک عبور کافی است
+
             with torch.no_grad():
                 for data_test in test_loader:
                     target = data_test[0].cuda()
