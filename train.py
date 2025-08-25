@@ -252,6 +252,25 @@ def make_weights_from_numpy(target_t, k=K_RINGS, stroke_w=STROKE_W, ring_w=RING_
         w.fill_(1.0)
     if normalize_to_mean_one:
         w = w / w.mean().clamp(min=1e-8)
+    # DEBUG: print once per process to verify binarization/normalization
+    if not hasattr(make_weights_from_numpy, "_dbg_count"):
+        make_weights_from_numpy._dbg_count = 0
+    if make_weights_from_numpy._dbg_count < 3:
+        make_weights_from_numpy._dbg_count += 1
+        with torch.no_grad():
+        # reconstruct the internal binarization used
+            tgt_np = target_t.detach().cpu().numpy()
+            if tgt_np.max() <= 1.0:
+                bin_batch = (tgt_np > 0.5).astype(np.uint8)
+            else:
+                bin_batch = (tgt_np > 127).astype(np.uint8)
+            fg_ratio_batch = bin_batch.mean()
+            print("[make_weights_from_numpy:DEBUG]",
+              f"shape={target_t.shape} dtype={target_t.dtype} max={target_t.max().item():.3f}",
+              f"fg_ratio~={fg_ratio_batch:.4f}",
+              f"w_min={w.min().item():.4f} w_mean={w.mean().item():.4f} w_max={w.max().item():.4f}",
+              f"norm_mean_one={normalize_to_mean_one}")
+
     return w
 
 def _to_gray_if_rgb(t):
@@ -339,6 +358,50 @@ def _collect_scores(y_score, y_true, buf_scores, buf_trues, cap, collected_count
         buf_trues.append(y_true)
         return collected_count + y_score.size
 
+def _fg_ratio(t: torch.Tensor) -> float:
+    """Fraction of foreground pixels in target (assumes 0..1; if not, we clamp test below)."""
+    with torch.no_grad():
+        t_cpu = t.detach().float().cpu()
+        if t_cpu.max() > 1.0:  # not normalized
+            t_cpu = (t_cpu > 127).float()
+        else:
+            t_cpu = (t_cpu > 0.5).float()
+        return float(t_cpu.mean())
+
+def _tensor_stats(x: torch.Tensor):
+    x = x.detach()
+    return {
+        "shape": tuple(x.shape),
+        "dtype": str(x.dtype),
+        "device": str(x.device),
+        "min": float(torch.nanmin(x)),
+        "max": float(torch.nanmax(x)),
+        "mean": float(torch.nanmean(x)),
+        "sum": float(torch.nansum(x)),
+        "finite": bool(torch.isfinite(x).all())
+    }
+
+def log_weight_debug(writer, tag_prefix, step, target, weights):
+    """Logs scalars + histograms to TensorBoard safely."""
+    fg = _fg_ratio(target)
+    wstats = _tensor_stats(weights)
+    tstats = _tensor_stats(target)
+
+    # Scalars
+    writer.add_scalar(f'{tag_prefix}/target_fg_ratio', fg, step)
+    writer.add_scalar(f'{tag_prefix}/weights_mean', wstats["mean"], step)
+    writer.add_scalar(f'{tag_prefix}/weights_min',  wstats["min"],  step)
+    writer.add_scalar(f'{tag_prefix}/weights_max',  wstats["max"],  step)
+    writer.add_scalar(f'{tag_prefix}/weights_sum',  wstats["sum"],  step)
+
+    # Histograms (cheap but informative)
+    writer.add_histogram(f'{tag_prefix}/weights_hist', weights.detach().cpu(), step)
+    writer.add_histogram(f'{tag_prefix}/target_hist',  target.detach().cpu(),  step)
+
+    # Occasional console prints (only every ~200 steps)
+    if step % 200 == 0:
+        print(f"[{tag_prefix}@{step}] target stats={tstats}  weights stats={wstats}  fg_ratio={fg:.4f}")
+
 # =========================
 # Histories & best trackers
 # =========================
@@ -406,6 +469,17 @@ for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
 
         # weights & losses
         weights = make_weights_from_numpy(target, k=K_RINGS, stroke_w=STROKE_W, ring_w=RING_W)
+        # Log once per N steps to avoid spam (adjust N as you like)
+        N = 50
+        global_step = (epoch - 1) * len(train_loader) + i
+        if global_step % N == 0:
+            log_weight_debug(writer, 'train/weights', global_step, target, weights)
+
+        # Safety checks (catch silent failures)
+        assert weights.shape == target.shape, f"weights {weights.shape} vs target {target.shape}"
+        assert torch.isfinite(weights).all(), "NaN/Inf in weights"
+        assert weights.sum() > 0, "weights sum == 0 (all zeros?)"
+
         # NOTE: using logits in Charbonnier is fine with eps
         loss = charbonnier_loss(logits, target, weight=weights, eps=1e-3)
 
@@ -431,7 +505,7 @@ for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
 
         loss.backward()
         optimizer.step()
-        epoch_loss += loss.item()
+        epoch_loss = epoch_loss+loss.item()
 
     # Aggregate train metrics (per epoch)
     train_loss_epoch = epoch_loss / max(1, len(train_loader))
@@ -514,10 +588,15 @@ for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
                 val_mse_sum += se.mean().item()
 
                 weights = make_weights_from_numpy(target, k=K_RINGS, stroke_w=STROKE_W, ring_w=RING_W)
+                # after weights = ...
+                if (epoch % VAL_AFTER) == 0 and (ii % 20 == 0):
+                    step = epoch * 100000 + ii  # unique-ish step for TB
+                    log_weight_debug(writer, 'val/weights', step, target, weights)
+
                 val_mseW_sum += (se * weights).sum().item() / max(1e-8, weights.sum().item())
 
                 val_loss = charbonnier_loss(logits, target, weight=weights, eps=1e-3)
-                val_epoch_loss += val_loss.item()
+                val_epoch_loss = val_epoch_loss+val_loss.item()
                 val_batches += 1
 
                 # collect for AUROC/AUPRC if both classes present
