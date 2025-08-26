@@ -307,34 +307,30 @@ def plot_weighting_steps(steps, save_path, title="Weighting process", cmap='hot'
     """
     rings = steps["rings"]
     K = len(rings)
-    cols = 2 + K - 1  # binary + K rings + final weights  (K>=1 => 1+K+1; when K=1 -> 2+0)
-    cols = 2 + K      # clearer: [binary] + K*[ring] + [weights]
-    fig, axes = plt.subplots(1, cols, figsize=(3.5*cols, 3.6), squeeze=False)
-    ax = axes[0]
+    cols = 2 + K  # binary + rings + final weights
+    fig, axes = plt.subplots(1, cols, figsize=(3.5*cols, 3.6))
 
     # 1) binary
-    ax[0,0].imshow(steps["binary"], vmin=0, vmax=1, cmap='gray')
-    ax[0,0].set_title("Binary mask")
-    ax[0,0].axis('off')
+    axes[0].imshow(steps["binary"], vmin=0, vmax=1, cmap='gray')
+    axes[0].set_title("Binary mask")
+    axes[0].axis('off')
 
     # 2) rings
     for i, r in enumerate(rings):
-        ax[0,1+i].imshow(r.astype(np.float32), vmin=0, vmax=1, cmap='inferno')
-        ax[0,1+i].set_title(f"Ring {i+1}")
-        ax[0,1+i].axis('off')
+        axes[1+i].imshow(r.astype(np.float32), vmin=0, vmax=1, cmap='inferno')
+        axes[1+i].set_title(f"Ring {i+1}")
+        axes[1+i].axis('off')
 
     # 3) final weights
     W = steps["weights_raw"] if show_raw else steps["weights_norm"]
-    im = ax[0,-1].imshow(W, cmap=cmap, interpolation='nearest')
-    ax[0,-1].set_title("Weights (norm=1)" if not show_raw else "Weights (raw)")
-    ax[0,-1].axis('off')
+    im = axes[-1].imshow(W, cmap=cmap, interpolation='nearest')
+    axes[-1].set_title("Weights (norm=1)" if not show_raw else "Weights (raw)")
+    axes[-1].axis('off')
 
     # Colorbar only for the weight map
-    # Put a single colorbar aligned with last axis
-    cbar = fig.colorbar(im, ax=ax[0,-1], fraction=0.046, pad=0.04)
-    cbar.set_label('Weight value')
+    fig.colorbar(im, ax=axes[-1], fraction=0.046, pad=0.04).set_label('Weight value')
 
-    fig.suptitle(title, y=0.98, fontsize=12)
+    fig.suptitle(title, y=0.95, fontsize=12)
     plt.tight_layout()
     plt.savefig(save_path, dpi=160)
     plt.close(fig)
@@ -544,7 +540,7 @@ for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
                                         normalize_to_mean_one=NORM_MEAN_ONE, bg_min=0.0)
                     out_path_v = os.path.join(weights_dbg_dir, f"val_e{epoch:03d}.png")
                     plot_weighting_steps(steps_val, out_path_v, title=f"Val — epoch {epoch}")
-                    
+
                 val_mseW_sum += (se * weights).sum().item() / max(1e-8, weights.sum().item())
 
                 val_loss = charbonnier_loss(logits, target, weight=weights, eps=1e-3)
