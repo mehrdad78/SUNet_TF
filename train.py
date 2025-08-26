@@ -201,6 +201,7 @@ def mse_loss(pred, target, weight=None):
     if weight is None:
         return diff.mean()
     return (diff * weight).sum() / weight.sum().clamp(min=1e-8)
+
 def ensure_single_channel(np_img):
     """هر ورودی (3,H,W) یا (H,W,3) یا (1,H,W) → خروجی (H,W)"""
     arr = np.array(np_img)
@@ -219,7 +220,7 @@ def ensure_single_channel(np_img):
 
 def background_adjacent_to_foreground(binary_image, k, footprint=None):
     if footprint is None:
-        footprint = np.ones((3, 3), dtype=bool)
+        footprint = footprint = np.ones((7,7), dtype=bool)  
     prev = np.squeeze(binary_image).astype(np.uint8)
 
     if prev.ndim != 2:
