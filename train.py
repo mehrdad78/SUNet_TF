@@ -28,9 +28,9 @@ MARK = {'auroc':'o', 'auprc':'x', 'loss':'^', 'mse':'s', 'mse_w':'d'}
 STYLE = {'train':'-', 'val':'--', 'test':':'}
 
 # Boundary-weight settings
-K_RINGS = 5
-RING_W  = (4.0, 3.0, 2.0, 1.5, 1.0)
-STROKE_W = 5.0
+K_RINGS = 2
+STROKE_W = 3.0
+RING_W = (3.0, 2.0, 1.0)
 NORM_MEAN_ONE = True
 
 # ROC/PR collectors (subsample pixels to save RAM; 0 = no cap)
@@ -117,9 +117,6 @@ os.makedirs(overlay_tv_d, exist_ok=True)
 # NEW: combined Train+Val+Test overlay
 overlay_tvt_d = os.path.join(plots_root, 'overlay', 'train_val_test')
 os.makedirs(overlay_tvt_d, exist_ok=True)
-weights_dbg_dir = os.path.join(plots_root, 'weights_debug')
-os.makedirs(weights_dbg_dir, exist_ok=True)
-
 
 # =========================
 # Optimizer / Scheduler
@@ -200,21 +197,20 @@ def mse_loss(pred, target, weight=None):
     return (diff * weight).sum() / weight.sum().clamp(min=1e-8)
 
 
-def background_adjacent_to_foreground(binary_image, k, footprint=np.ones((7,7), dtype=bool)):
+def background_adjacent_to_foreground(binary_image, k, footprint=None):
     if footprint is None:
-        footprint = np.ones((7,7 ), dtype=bool)  # 8-neighborhood
+        footprint = np.ones((3, 3), dtype=bool)  # 8-neighborhood
     prev = (binary_image > 0).astype(np.uint8)
     neigh_masks = []
     for _ in range(k):  # exactly k rings
-        dil = binary_dilation(prev.astype(bool), structure=footprint).astype(np.uint8)
-
+        dil = binary_dilation(prev.astype(bool), footprint=footprint).astype(np.uint8)
         ring = (dil - prev).astype(bool)
         neigh_masks.append(ring)
         prev = dil
     return neigh_masks
 
 
-def make_weight_matrix(binary_image, masks, stroke_w=STROKE_W, masks_w=RING_W, bg_min=0.5):
+def make_weight_matrix(binary_image, masks, stroke_w=STROKE_W, masks_w=RING_W, bg_min=0.0):
     h, w = binary_image.shape
     weights = np.zeros((h, w), dtype=np.float32)
     if bg_min > 0.0:
@@ -228,13 +224,14 @@ def make_weight_matrix(binary_image, masks, stroke_w=STROKE_W, masks_w=RING_W, b
 
 
 def make_weights_from_numpy(target_t, k=K_RINGS, stroke_w=STROKE_W, ring_w=RING_W,
-                            normalize_to_mean_one=NORM_MEAN_ONE, bg_min=0.5):
+                            normalize_to_mean_one=NORM_MEAN_ONE, bg_min=0.0):
     assert target_t.dim() == 4 and target_t.size(1) == 1, "expect (B,1,H,W)"
     device = target_t.device
     tgt_np = target_t.detach().cpu().numpy()
-    
-    bin_batch = (tgt_np > 0.5).astype(np.uint8)
-
+    if tgt_np.max() <= 1.0:
+        bin_batch = (tgt_np > 0.5).astype(np.uint8)
+    else:
+        bin_batch = (tgt_np > 127).astype(np.uint8)
     weights_list = []
     for b in range(bin_batch.shape[0]):
         bin_img = bin_batch[b, 0]
@@ -250,144 +247,6 @@ def make_weights_from_numpy(target_t, k=K_RINGS, stroke_w=STROKE_W, ring_w=RING_
     if normalize_to_mean_one:
         w = w / w.mean().clamp(min=1e-8)
     return w
-
-# =========================
-# Weighting debug: compute & plot step-by-step
-# =========================
-import matplotlib.pyplot as plt
-from matplotlib.colors import Normalize
-import matplotlib as mpl
-
-def _to_np01(t):
-    """(B,1,H,W) -> (H,W) float32 in [0,1] for visualization."""
-    a = t.detach().cpu().numpy()
-    a = a[0,0] if a.ndim == 4 else a
-    a = a.astype(np.float32)
-    if a.max() > 1.0: a = a / 255.0
-    return a
-
-def compute_weighting_steps(target_t, k=K_RINGS, stroke_w=STROKE_W, ring_w=RING_W,
-                            normalize_to_mean_one=NORM_MEAN_ONE, bg_min=0.5):
-
-    assert target_t.dim() == 4 and target_t.size(1) == 1
-    # Work on a single example for plotting
-    tgt = target_t[0:1]
-
-    # Build binary + rings exactly like training
-    tgt_np = tgt.detach().cpu().numpy()
-    
-    bin_img = (tgt_np[0,0] > 0.5).astype(np.uint8)
-
-
-    rings = background_adjacent_to_foreground(bin_img, k)   # list of bool masks
-
-    # Raw (unnormalized) weights
-    w_raw = make_weight_matrix(bin_img, rings, stroke_w=float(stroke_w), masks_w=list(ring_w)).astype(np.float32)
-    if bg_min > 0.0:
-        w_raw[w_raw == 0] = bg_min
-
-    # Normalized weights (what your loss actually uses if NORM_MEAN_ONE=True)
-    w_norm = w_raw.copy()
-    if normalize_to_mean_one:
-        m = w_norm.mean() if w_norm.size > 0 else 1.0
-        w_norm = w_norm / max(1e-8, m)
-
-    steps = {
-        "binary": bin_img.astype(np.float32),
-        "rings": rings,                # list of HxW bools
-        "weights_raw": w_raw,          # float32
-        "weights_norm": w_norm         # float32
-    }
-    return steps
-
-def plot_weighting_steps(steps, save_path, title="Weighting process", cmap='hot', show_raw=True):
-    """
-    Makes a compact grid:
-      [binary] [ring1] [ring2] ... [ringK] [weights_norm (or raw)]
-    """
-    rings = steps["rings"]
-    K = len(rings)
-    cols = 2 + K  # binary + rings + final weights
-    fig, axes = plt.subplots(1, cols, figsize=(3.5*cols, 3.6))
-
-    # 1) binary
-    axes[0].imshow(steps["binary"], vmin=0, vmax=1, cmap='gray')
-    axes[0].set_title("Binary mask")
-    axes[0].axis('off')
-
-    # 2) rings
-    for i, r in enumerate(rings):
-        axes[1+i].imshow(r.astype(np.float32), vmin=0, vmax=1, cmap='inferno')
-        axes[1+i].set_title(f"Ring {i+1}")
-        axes[1+i].axis('off')
-
-    # 3) final weights
-    W = steps["weights_raw"] if show_raw else steps["weights_norm"]
-    im = axes[-1].imshow(W, cmap=cmap, interpolation='nearest')
-    axes[-1].set_title("Weights (norm=1)" if not show_raw else "Weights (raw)")
-    axes[-1].axis('off')
-
-    # Colorbar only for the weight map
-    fig.colorbar(im, ax=axes[-1], fraction=0.046, pad=0.04).set_label('Weight value')
-
-    fig.suptitle(title, y=0.95, fontsize=12)
-    plt.tight_layout()
-    plt.savefig(save_path, dpi=160)
-    plt.close(fig)
-
-import matplotlib.pyplot as plt
-import numpy as np
-from scipy.ndimage import binary_dilation
-
-def debug_plot_rings(bin_img, k=5, save_path="rings_debug.png"):
-    """
-    bin_img : np.uint8 (0,1) mask با 1=foreground
-    k       : تعداد رینگ
-    save_path: آدرس ذخیره شکل
-    """
-    # مطمئن شو ورودی فقط 0 و 1 داره
-    bin_img = (bin_img > 0).astype(np.uint8)
-
-    prev = bin_img.copy()
-    rings = []
-
-    for step in range(1, k+1):
-        dil  = binary_dilation(prev, structure=np.ones((3,3))).astype(np.uint8)
-        ring = (dil - prev).astype(np.uint8)
-        rings.append(ring)
-        prev = dil
-        print(f"[step {step}] prev={prev.sum()} dil={dil.sum()} ring={ring.sum()}")
-
-    # شکل کنار هم
-    cols = 2 + k  # target + k ring + weights
-    fig, axes = plt.subplots(1, cols, figsize=(3*cols, 3))
-
-    # target
-    axes[0].imshow(bin_img, cmap='gray')
-    axes[0].set_title("Target")
-    axes[0].axis('off')
-
-    # rings
-    for i, r in enumerate(rings):
-        axes[1+i].imshow(r, cmap='inferno', vmin=0, vmax=1)
-        axes[1+i].set_title(f"Ring {i+1}\n(sum={r.sum()})")
-        axes[1+i].axis('off')
-
-    # نهایی: وزن خام
-    weights = np.zeros_like(bin_img, dtype=np.float32)
-    weights[bin_img==1] = 3.0  # stroke_w
-    for i, r in enumerate(rings):
-        wv = max(1.0, 2.0 - 0.5*i)  # مثال: وزن‌های کاهشی
-        weights[r==1] = wv
-    im = axes[-1].imshow(weights, cmap='hot')
-    axes[-1].set_title("Weights")
-    axes[-1].axis('off')
-    fig.colorbar(im, ax=axes[-1], fraction=0.046, pad=0.04)
-
-    plt.tight_layout()
-    plt.savefig(save_path, dpi=160)
-    plt.close(fig)
-    print(f"✅ saved {save_path}")
 
 
 def _collect_scores(y_score, y_true, buf_scores, buf_trues, cap, collected_count):
@@ -408,7 +267,6 @@ def _collect_scores(y_score, y_true, buf_scores, buf_trues, cap, collected_count
         buf_scores.append(y_score)
         buf_trues.append(y_true)
         return collected_count + y_score.size
-    
 
 # =========================
 # Histories & best trackers
@@ -471,22 +329,13 @@ for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
             target = 0.2989 * target[:, 0:1] + 0.5870 * target[:, 1:2] + 0.1140 * target[:, 2:3]
 
         logits = model_restored(input_)              # raw model output
-        prob   = torch.sigmoid(logits)  
-                     # for metrics
-        # target: (B,1,H,W) tensor
-        tgt = target[0,0].detach().cpu().numpy()
-        debug_plot_rings(tgt, k=5, save_path=f"rings_epoch{epoch:03d}_batch{i:04d}.png")
+        prob   = torch.sigmoid(logits)               # for metrics
 
         # weights & losses
         weights = make_weights_from_numpy(target, k=K_RINGS, stroke_w=STROKE_W, ring_w=RING_W)
         # NOTE: using logits in Charbonnier is fine with eps
         loss = charbonnier_loss(logits, target, weight=weights, eps=1e-3)
-        N_SAMPLES_PER_EPOCH = 3
-        if i < N_SAMPLES_PER_EPOCH and (epoch in (start_epoch, start_epoch+1) or epoch % 10 == 0):
-            steps = compute_weighting_steps(target, k=K_RINGS, stroke_w=STROKE_W, ring_w=RING_W,
-                                    normalize_to_mean_one=NORM_MEAN_ONE, bg_min=0.0)
-            out_path = os.path.join(weights_dbg_dir, f"train_e{epoch:03d}_b{i:04d}.png")
-            plot_weighting_steps(steps, out_path, title=f"Train — epoch {epoch}, batch {i}")
+
         # Train MSE & weighted MSE (no grad)
         with torch.no_grad():
             se = (logits - target) ** 2
@@ -592,12 +441,6 @@ for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
                 val_mse_sum += se.mean().item()
 
                 weights = make_weights_from_numpy(target, k=K_RINGS, stroke_w=STROKE_W, ring_w=RING_W)
-                if data_val is val_loader.dataset and val_batches == 1:
-                    steps_val = compute_weighting_steps(target, k=K_RINGS, stroke_w=STROKE_W, ring_w=RING_W,
-                                        normalize_to_mean_one=NORM_MEAN_ONE, bg_min=0.0)
-                    out_path_v = os.path.join(weights_dbg_dir, f"val_e{epoch:03d}.png")
-                    plot_weighting_steps(steps_val, out_path_v, title=f"Val — epoch {epoch}")
-
                 val_mseW_sum += (se * weights).sum().item() / max(1e-8, weights.sum().item())
 
                 val_loss = charbonnier_loss(logits, target, weight=weights, eps=1e-3)
