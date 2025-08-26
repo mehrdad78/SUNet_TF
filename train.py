@@ -235,6 +235,22 @@ def background_adjacent_to_foreground(binary_image, k, footprint=None):
         prev = dil
     return neigh_masks
 
+from scipy.ndimage import distance_transform_edt
+
+def distance_based_rings(binary_image, k=2):
+    """
+    binary_image: np.ndarray (H,W), مقادیر 0/1
+    k: تعداد رینگ‌ها
+    خروجی: لیست رینگ‌ها
+    """
+    # فاصله‌ی هر پیکسل از نزدیک‌ترین foreground
+    dist = distance_transform_edt(~binary_image.astype(bool))
+
+    rings = []
+    for i in range(1, k+1):
+        ring = (dist == i)
+        rings.append(ring)
+    return rings
 
 def to_single_channel(np_img):
     # If already 2D, return
@@ -291,7 +307,7 @@ def make_weights_from_numpy_binary(target_t, k=K_RINGS,
         
         bin_img = bin_img.astype(np.uint8)
 
-        masks = background_adjacent_to_foreground(bin_img, k)
+        masks = distance_based_rings(bin_img, k)
         w_np = make_weight_matrix(bin_img, masks,
                                   stroke_w=float(stroke_w),
                                   masks_w=list(ring_w)).astype(np.float32)
@@ -323,7 +339,7 @@ def debug_plot_weighting_binary(target_tensor, save_dir, name="sample",
     #else:
     bin_img = bin_img.astype(np.uint8)
 
-    masks = background_adjacent_to_foreground(bin_img, k)
+    masks = distance_based_rings(bin_img, k)
 
     w_np = make_weight_matrix(bin_img, masks,
                               stroke_w=float(stroke_w),
