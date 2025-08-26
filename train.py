@@ -206,7 +206,8 @@ def background_adjacent_to_foreground(binary_image, k, footprint=np.ones((7,7), 
     prev = (binary_image > 0).astype(np.uint8)
     neigh_masks = []
     for _ in range(k):  # exactly k rings
-        dil = binary_dilation(prev.astype(bool), footprint=footprint).astype(np.uint8)
+        dil = binary_dilation(prev.astype(bool), structure=footprint).astype(np.uint8)
+
         ring = (dil - prev).astype(bool)
         neigh_masks.append(ring)
         prev = dil
@@ -470,7 +471,8 @@ for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
             target = 0.2989 * target[:, 0:1] + 0.5870 * target[:, 1:2] + 0.1140 * target[:, 2:3]
 
         logits = model_restored(input_)              # raw model output
-        prob   = torch.sigmoid(logits)               # for metrics
+        prob   = torch.sigmoid(logits)  
+                     # for metrics
         # target: (B,1,H,W) tensor
         tgt = target[0,0].detach().cpu().numpy()
         debug_plot_rings(tgt, k=5, save_path=f"rings_epoch{epoch:03d}_batch{i:04d}.png")
