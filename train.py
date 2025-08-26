@@ -201,6 +201,20 @@ def mse_loss(pred, target, weight=None):
     if weight is None:
         return diff.mean()
     return (diff * weight).sum() / weight.sum().clamp(min=1e-8)
+def ensure_single_channel(np_img):
+    """هر ورودی (3,H,W) یا (H,W,3) یا (1,H,W) → خروجی (H,W)"""
+    arr = np.array(np_img)
+
+    if arr.ndim == 3:
+        # CHW format
+        if arr.shape[0] == 3:  
+            arr = arr[0]       # یکی از کانال‌ها کافی است چون ماسک باینری است
+        elif arr.shape[0] == 1:
+            arr = arr[0]       # (1,H,W) → (H,W)
+        # HWC format
+        elif arr.shape[-1] == 3:  
+            arr = arr[..., 0]  # یکی از کانال‌ها کافی است
+    return arr.squeeze()
 
 
 def background_adjacent_to_foreground(binary_image, k, footprint=None):
@@ -257,21 +271,32 @@ def make_weights_from_numpy_binary(target_t, k=K_RINGS,
                                    ring_w=RING_W,
                                    normalize_to_mean_one=NORM_MEAN_ONE,
                                    bg_min=0.0):
-
-    assert target_t.dim() == 4 and target_t.size(1) == 1, "expect (B,1,H,W)"
+    """
+    target_t: (B,1,H,W) یا (B,3,H,W) — ماسک باینری آماده
+    """
     device = target_t.device
-
     tgt_np = target_t.detach().cpu().numpy()
-    if tgt_np.max() > 1:  # اگر ۰/۲۵۵ باشه، بیاریم به ۰/۱
-        tgt_np = (tgt_np > 127).astype(np.uint8)
 
     weights_list = []
     for b in range(tgt_np.shape[0]):
-        bin_img = tgt_np[b, 0].astype(np.uint8)
+        # انتخاب تصویر باینری
+        if target_t.size(1) == 1:
+            arr = tgt_np[b, 0]
+        else:
+            arr = tgt_np[b]
+
+        bin_img = ensure_single_channel(arr)
+
+        # نرمال‌سازی به ۰/۱
+        if bin_img.max() > 1:
+            bin_img = (bin_img > 127).astype(np.uint8)
+        else:
+            bin_img = bin_img.astype(np.uint8)
+
         masks = background_adjacent_to_foreground(bin_img, k)
-        w_np = make_weight_matrix(
-            bin_img, masks, stroke_w=float(stroke_w), masks_w=list(ring_w)
-        ).astype(np.float32)
+        w_np = make_weight_matrix(bin_img, masks,
+                                  stroke_w=float(stroke_w),
+                                  masks_w=list(ring_w)).astype(np.float32)
         if bg_min > 0.0:
             w_np[w_np == 0] = bg_min
         weights_list.append(w_np[None, None, ...])
@@ -285,40 +310,35 @@ def make_weights_from_numpy_binary(target_t, k=K_RINGS,
         w = w / w.mean().clamp(min=1e-8)
     return w
 
-
 def debug_plot_weighting_binary(target_tensor, save_dir, name="sample",
                                 k=K_RINGS, stroke_w=STROKE_W, ring_w=RING_W):
     """
-    target_tensor: (1,1,H,W) باینری آماده
+    target_tensor: (B,1,H,W) یا (B,3,H,W) — ماسک باینری
     """
     os.makedirs(save_dir, exist_ok=True)
 
-    tgt_np = target_tensor.squeeze().cpu().numpy()
-    if tgt_np.max() > 1:  # اگر ۰/۲۵۵ باشه
-        bin_img = (tgt_np > 127).astype(np.uint8)
-    else:  # اگر ۰/۱ باشه
-        bin_img = tgt_np.astype(np.uint8)
+    tgt_np = target_tensor[0].cpu().numpy()  # اولین تصویر از batch
+    bin_img = ensure_single_channel(tgt_np)
+
+    if bin_img.max() > 1:
+        bin_img = (bin_img > 127).astype(np.uint8)
+    else:
+        bin_img = bin_img.astype(np.uint8)
 
     masks = background_adjacent_to_foreground(bin_img, k)
 
-    w_np = make_weight_matrix(
-        bin_img, masks, stroke_w=float(stroke_w), masks_w=list(ring_w)
-    ).astype(np.float32)
+    w_np = make_weight_matrix(bin_img, masks,
+                              stroke_w=float(stroke_w),
+                              masks_w=list(ring_w)).astype(np.float32)
 
     cols = 3 + len(masks)
     fig, axes = plt.subplots(1, cols, figsize=(4*cols, 4))
 
-    axes[0].imshow(tgt_np, cmap="gray"); axes[0].set_title("Target (raw)"); axes[0].axis("off")
-    axes[1].imshow(bin_img, cmap="gray"); axes[1].set_title("Binary mask"); axes[1].axis("off")
-
+    axes[0].imshow(bin_img, cmap="gray"); axes[0].set_title("Binary mask"); axes[0].axis("off")
     for i, ring in enumerate(masks):
-        axes[2+i].imshow(ring, cmap="gray")
-        axes[2+i].set_title(f"Ring {i+1}")
-        axes[2+i].axis("off")
-
+        axes[1+i].imshow(ring, cmap="gray"); axes[1+i].set_title(f"Ring {i+1}"); axes[1+i].axis("off")
     im = axes[-1].imshow(w_np, cmap="magma")
-    axes[-1].set_title("Final Weights")
-    axes[-1].axis("off")
+    axes[-1].set_title("Final Weights"); axes[-1].axis("off")
     plt.colorbar(im, ax=axes[-1], fraction=0.046, pad=0.04)
 
     plt.tight_layout()
@@ -327,6 +347,7 @@ def debug_plot_weighting_binary(target_tensor, save_dir, name="sample",
     plt.close(fig)
 
     print(f"✅ Weighting debug plot saved: {out_path}")
+
 
 
 sample = next(iter(train_loader))
