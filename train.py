@@ -318,10 +318,10 @@ def debug_plot_weighting_binary(target_tensor, save_dir, name="sample",
     tgt_np = target_tensor[0].cpu().numpy()  # اولین تصویر از batch
     bin_img = ensure_single_channel(tgt_np)
 
-    #if bin_img.max() > 1:
-     #   bin_img = (bin_img > 127).astype(np.uint8)
-    #else:
-    bin_img = bin_img.astype(np.uint8)
+    if bin_img.max() > 1:
+        bin_img = (bin_img > 127).astype(np.uint8)
+    else:
+        bin_img = bin_img.astype(np.uint8)
 
     masks = background_adjacent_to_foreground(bin_img, k)
 
