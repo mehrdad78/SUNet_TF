@@ -117,6 +117,9 @@ os.makedirs(overlay_tv_d, exist_ok=True)
 # NEW: combined Train+Val+Test overlay
 overlay_tvt_d = os.path.join(plots_root, 'overlay', 'train_val_test')
 os.makedirs(overlay_tvt_d, exist_ok=True)
+weights_dbg_dir = os.path.join(plots_root, 'weights_debug')
+os.makedirs(weights_dbg_dir, exist_ok=True)
+
 
 # =========================
 # Optimizer / Scheduler
@@ -248,6 +251,95 @@ def make_weights_from_numpy(target_t, k=K_RINGS, stroke_w=STROKE_W, ring_w=RING_
         w = w / w.mean().clamp(min=1e-8)
     return w
 
+# =========================
+# Weighting debug: compute & plot step-by-step
+# =========================
+import matplotlib.pyplot as plt
+from matplotlib.colors import Normalize
+import matplotlib as mpl
+
+def _to_np01(t):
+    """(B,1,H,W) -> (H,W) float32 in [0,1] for visualization."""
+    a = t.detach().cpu().numpy()
+    a = a[0,0] if a.ndim == 4 else a
+    a = a.astype(np.float32)
+    if a.max() > 1.0: a = a / 255.0
+    return a
+
+def compute_weighting_steps(target_t, k=K_RINGS, stroke_w=STROKE_W, ring_w=RING_W,
+                            normalize_to_mean_one=NORM_MEAN_ONE, bg_min=0.0):
+
+    assert target_t.dim() == 4 and target_t.size(1) == 1
+    # Work on a single example for plotting
+    tgt = target_t[0:1]
+
+    # Build binary + rings exactly like training
+    tgt_np = tgt.detach().cpu().numpy()
+    
+    bin_img = (tgt_np[0,0] > 0.5).astype(np.uint8)
+
+
+    rings = background_adjacent_to_foreground(bin_img, k)   # list of bool masks
+
+    # Raw (unnormalized) weights
+    w_raw = make_weight_matrix(bin_img, rings, stroke_w=float(stroke_w), masks_w=list(ring_w)).astype(np.float32)
+    if bg_min > 0.0:
+        w_raw[w_raw == 0] = bg_min
+
+    # Normalized weights (what your loss actually uses if NORM_MEAN_ONE=True)
+    w_norm = w_raw.copy()
+    if normalize_to_mean_one:
+        m = w_norm.mean() if w_norm.size > 0 else 1.0
+        w_norm = w_norm / max(1e-8, m)
+
+    steps = {
+        "binary": bin_img.astype(np.float32),
+        "rings": rings,                # list of HxW bools
+        "weights_raw": w_raw,          # float32
+        "weights_norm": w_norm         # float32
+    }
+    return steps
+
+def plot_weighting_steps(steps, save_path, title="Weighting process", cmap='hot', show_raw=False):
+    """
+    Makes a compact grid:
+      [binary] [ring1] [ring2] ... [ringK] [weights_norm (or raw)]
+    """
+    rings = steps["rings"]
+    K = len(rings)
+    cols = 2 + K - 1  # binary + K rings + final weights  (K>=1 => 1+K+1; when K=1 -> 2+0)
+    cols = 2 + K      # clearer: [binary] + K*[ring] + [weights]
+    fig, axes = plt.subplots(1, cols, figsize=(3.5*cols, 3.6), squeeze=False)
+    ax = axes[0]
+
+    # 1) binary
+    ax[0,0].imshow(steps["binary"], vmin=0, vmax=1, cmap='gray')
+    ax[0,0].set_title("Binary mask")
+    ax[0,0].axis('off')
+
+    # 2) rings
+    for i, r in enumerate(rings):
+        ax[0,1+i].imshow(r.astype(np.float32), vmin=0, vmax=1, cmap='inferno')
+        ax[0,1+i].set_title(f"Ring {i+1}")
+        ax[0,1+i].axis('off')
+
+    # 3) final weights
+    W = steps["weights_raw"] if show_raw else steps["weights_norm"]
+    im = ax[0,-1].imshow(W, cmap=cmap, interpolation='nearest')
+    ax[0,-1].set_title("Weights (norm=1)" if not show_raw else "Weights (raw)")
+    ax[0,-1].axis('off')
+
+    # Colorbar only for the weight map
+    # Put a single colorbar aligned with last axis
+    cbar = fig.colorbar(im, ax=ax[0,-1], fraction=0.046, pad=0.04)
+    cbar.set_label('Weight value')
+
+    fig.suptitle(title, y=0.98, fontsize=12)
+    plt.tight_layout()
+    plt.savefig(save_path, dpi=160)
+    plt.close(fig)
+
+
 
 def _collect_scores(y_score, y_true, buf_scores, buf_trues, cap, collected_count):
     """Append scores/labels with an optional global cap to limit memory."""
@@ -267,6 +359,7 @@ def _collect_scores(y_score, y_true, buf_scores, buf_trues, cap, collected_count
         buf_scores.append(y_score)
         buf_trues.append(y_true)
         return collected_count + y_score.size
+    
 
 # =========================
 # Histories & best trackers
@@ -335,7 +428,12 @@ for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
         weights = make_weights_from_numpy(target, k=K_RINGS, stroke_w=STROKE_W, ring_w=RING_W)
         # NOTE: using logits in Charbonnier is fine with eps
         loss = charbonnier_loss(logits, target, weight=weights, eps=1e-3)
-
+        N_SAMPLES_PER_EPOCH = 3
+        if i < N_SAMPLES_PER_EPOCH and (epoch in (start_epoch, start_epoch+1) or epoch % 10 == 0):
+            steps = compute_weighting_steps(target, k=K_RINGS, stroke_w=STROKE_W, ring_w=RING_W,
+                                    normalize_to_mean_one=NORM_MEAN_ONE, bg_min=0.0)
+            out_path = os.path.join(weights_dbg_dir, f"train_e{epoch:03d}_b{i:04d}.png")
+            plot_weighting_steps(steps, out_path, title=f"Train — epoch {epoch}, batch {i}")
         # Train MSE & weighted MSE (no grad)
         with torch.no_grad():
             se = (logits - target) ** 2
@@ -441,6 +539,12 @@ for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
                 val_mse_sum += se.mean().item()
 
                 weights = make_weights_from_numpy(target, k=K_RINGS, stroke_w=STROKE_W, ring_w=RING_W)
+                if data_val is val_loader.dataset and val_batches == 1:
+                    steps_val = compute_weighting_steps(target, k=K_RINGS, stroke_w=STROKE_W, ring_w=RING_W,
+                                        normalize_to_mean_one=NORM_MEAN_ONE, bg_min=0.0)
+                    out_path_v = os.path.join(weights_dbg_dir, f"val_e{epoch:03d}.png")
+                    plot_weighting_steps(steps_val, out_path_v, title=f"Val — epoch {epoch}")
+                    
                 val_mseW_sum += (se * weights).sum().item() / max(1e-8, weights.sum().item())
 
                 val_loss = charbonnier_loss(logits, target, weight=weights, eps=1e-3)
