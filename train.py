@@ -200,9 +200,9 @@ def mse_loss(pred, target, weight=None):
     return (diff * weight).sum() / weight.sum().clamp(min=1e-8)
 
 
-def background_adjacent_to_foreground(binary_image, k, footprint=np.ones((5,5), dtype=bool)):
+def background_adjacent_to_foreground(binary_image, k, footprint=np.ones((7,7), dtype=bool)):
     if footprint is None:
-        footprint = np.ones((3, 3), dtype=bool)  # 8-neighborhood
+        footprint = np.ones((7,7 ), dtype=bool)  # 8-neighborhood
     prev = (binary_image > 0).astype(np.uint8)
     neigh_masks = []
     for _ in range(k):  # exactly k rings
