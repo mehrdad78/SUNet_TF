@@ -28,8 +28,8 @@ MARK = {'auroc':'o', 'auprc':'x', 'loss':'^', 'mse':'s', 'mse_w':'d'}
 STYLE = {'train':'-', 'val':'--', 'test':':'}
 
 # Boundary-weight settings
-K_RINGS = 2
-STROKE_W = 3.0
+K_RINGS = 3
+STROKE_W = 5.0
 RING_W = (3.0, 2.0, 1.0)
 NORM_MEAN_ONE = True
 
@@ -213,7 +213,7 @@ def background_adjacent_to_foreground(binary_image, k, footprint=None):
     return neigh_masks
 
 
-def make_weight_matrix(binary_image, masks, stroke_w=STROKE_W, masks_w=RING_W, bg_min=0.0):
+def make_weight_matrix(binary_image, masks, stroke_w=STROKE_W, masks_w=RING_W, bg_min=0.5):
     h, w = binary_image.shape
     weights = np.zeros((h, w), dtype=np.float32)
     if bg_min > 0.0:
@@ -299,7 +299,7 @@ def compute_weighting_steps(target_t, k=K_RINGS, stroke_w=STROKE_W, ring_w=RING_
     }
     return steps
 
-def plot_weighting_steps(steps, save_path, title="Weighting process", cmap='hot', show_raw=False):
+def plot_weighting_steps(steps, save_path, title="Weighting process", cmap='hot', show_raw=True):
     """
     Makes a compact grid:
       [binary] [ring1] [ring2] ... [ringK] [weights_norm (or raw)]
