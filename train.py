@@ -28,9 +28,9 @@ MARK = {'auroc':'o', 'auprc':'x', 'loss':'^', 'mse':'s', 'mse_w':'d'}
 STYLE = {'train':'-', 'val':'--', 'test':':'}
 
 # Boundary-weight settings
-K_RINGS = 3
+K_RINGS = 5
+RING_W  = (4.0, 3.0, 2.0, 1.5, 1.0)
 STROKE_W = 5.0
-RING_W = (3.0, 2.0, 1.0)
 NORM_MEAN_ONE = True
 
 # ROC/PR collectors (subsample pixels to save RAM; 0 = no cap)
@@ -200,7 +200,7 @@ def mse_loss(pred, target, weight=None):
     return (diff * weight).sum() / weight.sum().clamp(min=1e-8)
 
 
-def background_adjacent_to_foreground(binary_image, k, footprint=None):
+def background_adjacent_to_foreground(binary_image, k, footprint=np.ones((5,5), dtype=bool)):
     if footprint is None:
         footprint = np.ones((3, 3), dtype=bool)  # 8-neighborhood
     prev = (binary_image > 0).astype(np.uint8)
@@ -227,7 +227,7 @@ def make_weight_matrix(binary_image, masks, stroke_w=STROKE_W, masks_w=RING_W, b
 
 
 def make_weights_from_numpy(target_t, k=K_RINGS, stroke_w=STROKE_W, ring_w=RING_W,
-                            normalize_to_mean_one=NORM_MEAN_ONE, bg_min=0.0):
+                            normalize_to_mean_one=NORM_MEAN_ONE, bg_min=0.5):
     assert target_t.dim() == 4 and target_t.size(1) == 1, "expect (B,1,H,W)"
     device = target_t.device
     tgt_np = target_t.detach().cpu().numpy()
@@ -266,7 +266,7 @@ def _to_np01(t):
     return a
 
 def compute_weighting_steps(target_t, k=K_RINGS, stroke_w=STROKE_W, ring_w=RING_W,
-                            normalize_to_mean_one=NORM_MEAN_ONE, bg_min=0.0):
+                            normalize_to_mean_one=NORM_MEAN_ONE, bg_min=0.5):
 
     assert target_t.dim() == 4 and target_t.size(1) == 1
     # Work on a single example for plotting
