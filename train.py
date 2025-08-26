@@ -121,6 +121,7 @@ weights_dbg_dir = os.path.join(plots_root, 'weights_debug')
 os.makedirs(weights_dbg_dir, exist_ok=True)
 
 
+
 # =========================
 # Optimizer / Scheduler
 # =========================
@@ -212,6 +213,51 @@ def background_adjacent_to_foreground(binary_image, k, footprint=np.ones((7,7), 
         prev = dil
     return neigh_masks
 
+def background_adjacent_to_foreground_debug(binary_image, k, footprint=None,
+                                            debug_dir="./", tag=""):
+    """
+    Expect binary_image with 1=foreground (lines), 0=background.
+    Returns list[bool array] of rings and saves per-step panels if debug_dir is given.
+    """
+    import os
+    if footprint is None:
+        footprint = np.ones((5,5), dtype=bool)  # try (5,5) or (7,7) if you want wider rings
+
+    # Enforce polarity: 1 must be foreground; if not, invert
+    if binary_image.mean() > 0.5:
+        # looks like background=1 → invert for safety
+        binary_image = 1 - binary_image
+
+    prev = (binary_image > 0).astype(bool)   # foreground (lines)
+    rings = []
+
+    for step in range(1, k+1):
+        dil  = binary_dilation(prev, footprint=footprint)
+        ring = np.logical_and(dil, np.logical_not(prev))
+
+        # --- textual diagnostics
+        prev_sum = int(prev.sum())
+        dil_sum  = int(dil.sum())
+        ring_sum = int(ring.sum())
+        print(f"[rings] step={step}  prev={prev_sum}  dil={dil_sum}  ring={ring_sum}")
+
+        # --- optional visual diagnostics
+        if debug_dir:
+            os.makedirs(debug_dir, exist_ok=True)
+            fig, axes = plt.subplots(1,3, figsize=(9,3))
+            axes[0].imshow(prev, cmap='gray', vmin=0, vmax=1); axes[0].set_title(f"prev (sum={prev_sum})"); axes[0].axis('off')
+            axes[1].imshow(dil,  cmap='gray', vmin=0, vmax=1); axes[1].set_title(f"dil  (sum={dil_sum})");  axes[1].axis('off')
+            im = axes[2].imshow(ring.astype(float), cmap='inferno', vmin=0, vmax=1)
+            axes[2].set_title(f"ring {step} (sum={ring_sum})"); axes[2].axis('off')
+            plt.tight_layout()
+            plt.savefig(os.path.join(debug_dir, f"rings_{tag}_k{step:02d}.png"), dpi=160)
+            plt.close(fig)
+
+        rings.append(ring)
+        prev = dil
+
+    return rings
+
 
 def make_weight_matrix(binary_image, masks, stroke_w=STROKE_W, masks_w=RING_W, bg_min=0.5):
     h, w = binary_image.shape
@@ -237,7 +283,8 @@ def make_weights_from_numpy(target_t, k=K_RINGS, stroke_w=STROKE_W, ring_w=RING_
     weights_list = []
     for b in range(bin_batch.shape[0]):
         bin_img = bin_batch[b, 0]
-        masks = background_adjacent_to_foreground(bin_img, k)
+        dbg_dir = os.path.join(weights_dbg_dir, f"train_e{epoch:03d}_b{i:04d}")
+        masks = background_adjacent_to_foreground_debug(bin_img, k,debug_dir=dbg_dir)
         w_np = make_weight_matrix(bin_img, masks, stroke_w=float(stroke_w), masks_w=list(ring_w)).astype(np.float32)
         if bg_min > 0.0:
             w_np[w_np == 0] = bg_min
@@ -277,8 +324,8 @@ def compute_weighting_steps(target_t, k=K_RINGS, stroke_w=STROKE_W, ring_w=RING_
     
     bin_img = (tgt_np[0,0] > 0.5).astype(np.uint8)
 
-
-    rings = background_adjacent_to_foreground(bin_img, k)   # list of bool masks
+    dbg_dir = os.path.join(weights_dbg_dir, f"train_e{epoch:03d}_b{i:04d}")
+    rings = background_adjacent_to_foreground_debug(bin_img, k,debug_dir=dbg_dir)   # list of bool masks
 
     # Raw (unnormalized) weights
     w_raw = make_weight_matrix(bin_img, rings, stroke_w=float(stroke_w), masks_w=list(ring_w)).astype(np.float32)
