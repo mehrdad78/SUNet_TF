@@ -288,11 +288,8 @@ def make_weights_from_numpy_binary(target_t, k=K_RINGS,
 
         bin_img = ensure_single_channel(arr)
 
-        # نرمال‌سازی به ۰/۱
-        if bin_img.max() > 1:
-            bin_img = (bin_img > 127).astype(np.uint8)
-        else:
-            bin_img = bin_img.astype(np.uint8)
+        
+        bin_img = bin_img.astype(np.uint8)
 
         masks = background_adjacent_to_foreground(bin_img, k)
         w_np = make_weight_matrix(bin_img, masks,
