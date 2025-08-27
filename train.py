@@ -350,8 +350,18 @@ def _binarize_mask(t: torch.Tensor, fg_is_white: bool = True) -> torch.Tensor:
     t: (B,1,H,W) in [0,1] or [0,255]
     returns: bool mask with foreground=True
     """
-        
-    return (t > 0.5) if fg_is_white else (t < 0.5)
+    # Decide threshold from value range / dtype
+    if t.dtype.is_floating_point:
+        # If it looks like [0,255] but in float, rescale check:
+        thr = 0.5 if float(t.max()) <= 1.5 else 127.5
+    else:
+        thr = 127.5
+
+    if fg_is_white:
+        return t > thr
+    else:
+        return t <= thr
+
 
 
 def _collect_scores(y_score, y_true, buf_scores, buf_trues, cap, collected_count):
@@ -438,6 +448,10 @@ for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
                 target[:, 1:2] + 0.1140 * target[:, 2:3]
         if i == 0:  # only first batch per epoch
             debug_dir = os.path.join(plots_root, 'weights_debug', 'train')
+            print("target range:", float(target.min()), float(target.max()), target.dtype)
+            fg = _binarize_mask(target[:1], fg_is_white=FG_IS_WHITE)
+            print("fg ratio:", fg.float().mean().item())
+
             save_weighting_debug(target[:1], k=K_RINGS, out_dir=debug_dir, tag=f'epoch_{epoch:03d}_train')
 
         logits = model_restored(input_)              # raw model output
