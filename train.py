@@ -34,7 +34,8 @@ STYLE = {'train': '-', 'val': '--', 'test': ':'}
 # Boundary-weight settings
 K_RINGS = 2
 STROKE_W = 3.0
-RING_W = (3.0, 2.0, 1.0)
+RING_W   = (3.0, 3.0)   # or (3.0, 2.5)
+
 NORM_MEAN_ONE = False
 FG_IS_WHITE = False 
 # ROC/PR collectors (subsample pixels to save RAM; 0 = no cap)
@@ -244,7 +245,7 @@ def make_weights_from_torch(target_t: torch.Tensor,
                             stroke_w: float = 3.0,
                             ring_w=(3.0, 2.0, 1.0),
                             normalize_to_mean_one: bool = True,
-                            bg_min: float = 0.0,
+                            bg_min: float = 0.5,
                             kernel_size: int = 3,
                             device: str = "cuda") -> torch.Tensor:
     """
