@@ -352,23 +352,11 @@ def save_weighting_debug(target_t: torch.Tensor, k: int, out_dir: str, tag: str,
     plt.savefig(os.path.join(out_dir, f'{tag}_weights_heatmap.png')); plt.close()
 
 
+def _binarize_mask(t: torch.Tensor) -> torch.Tensor:
+    if t.max() > 1:       # normalize 0/255 → 0/1
+        t = t / 255
+    return t.round().bool()
 
-def _binarize_mask(t: torch.Tensor, fg_is_white: bool = True) -> torch.Tensor:
-    """
-    t: (B,1,H,W) in [0,1] or [0,255]
-    returns: bool mask with foreground=True
-    """
-    # Decide threshold from value range / dtype
-    if t.dtype.is_floating_point:
-        # If it looks like [0,255] but in float, rescale check:
-        thr = 0.5 if float(t.max()) <= 1.5 else 127.5
-    else:
-        thr = 127.5
-
-    if fg_is_white:
-        return t > thr
-    else:
-        return t <= thr
 
 @torch.no_grad()
 def save_rings_debug(target_t: torch.Tensor, k: int, out_dir: str, tag: str,
