@@ -357,17 +357,17 @@ def _binarize_mask(t: torch.Tensor, fg_is_white: bool = True) -> torch.Tensor:
     t: (B,1,H,W) in [0,1] or [0,255]
     returns: bool mask with foreground=True
     """
-    t_max = float(t.max())
+    # Decide threshold from value range / dtype
     if t.dtype.is_floating_point:
-        thr = 0.5 if t_max <= 1.5 else 127.5  # auto choose threshold
+        # If it looks like [0,255] but in float, rescale check:
+        thr = 0.5 if float(t.max()) <= 1.5 else 127.5
     else:
         thr = 127.5
 
     if fg_is_white:
-        return t > thr      # white strokes = foreground
+        return t > thr
     else:
-        return t <= thr     # black strokes = foreground
-
+        return t <= thr
 
 @torch.no_grad()
 def save_rings_debug(target_t: torch.Tensor, k: int, out_dir: str, tag: str,
