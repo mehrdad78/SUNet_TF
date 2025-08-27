@@ -446,7 +446,7 @@ for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
         if target.shape[1] == 3:
             target = 0.2989 * target[:, 0:1] + 0.5870 * \
                 target[:, 1:2] + 0.1140 * target[:, 2:3]
-        if i == 0:  # only first batch per epoch
+        if i <= 2:  # only first batch per epoch
             debug_dir = os.path.join(plots_root, 'weights_debug', 'train')
             print("target range:", float(target.min()), float(target.max()), target.dtype)
             fg = _binarize_mask(target[:1], fg_is_white=FG_IS_WHITE)
