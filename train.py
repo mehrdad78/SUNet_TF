@@ -299,50 +299,57 @@ def _ensure_dir(d):
 def save_weighting_debug(target_t: torch.Tensor, k: int, out_dir: str, tag: str,
                          ring_w=(3.0,2.0,1.0), kernel_size=3):
     """
-    Saves: (a) FG mask, (b) each ring mask, (c) final weight heatmap
+    Saves: (a) FG mask, (b) each ring mask, (c) raw + normalized heatmap
     target_t: (1,1,H,W) tensor
     """
     _ensure_dir(out_dir)
     dev = target_t.device
-      # keep consistent with above
 
-# after you define dev:
+    # binarize (0/255 → bool)
     bin_img = _binarize_mask(target_t[:1], fg_is_white=FG_IS_WHITE)[0,0]  # (H,W) bool on dev
+    H, W = bin_img.shape
 
-
-    # Build rings
+    # --- rings ---
     bin_np = bin_img.to(torch.uint8).cpu().numpy()
     rings = background_adjacent_to_foreground_torch(
         bin_np, k=k, kernel_size=kernel_size, device="cuda" if dev.type=="cuda" else "cpu"
     )
-    fg_ratio = bin_img.float().mean().item()
-    print(f"[debug] {tag}: FG pixel ratio = {fg_ratio:.4f}\n")
 
-    # Compose weights like training
-    H, W = bin_img.shape
+    # plot foreground
+    plt.figure(figsize=(4,4))
+    plt.imshow(bin_img.cpu().numpy(), cmap='gray')
+    plt.title(f'Foreground (tag={tag})'); plt.axis('off')
+    plt.savefig(os.path.join(out_dir, f'{tag}_fg.png')); plt.close()
+
+    # plot rings one by one
+    for i, r in enumerate(rings, 1):
+        plt.figure(figsize=(4,4))
+        plt.imshow(r.cpu().numpy(), cmap='gray')
+        plt.title(f'Ring {i}/{k}'); plt.axis('off')
+        plt.savefig(os.path.join(out_dir, f'{tag}_ring_{i}.png')); plt.close()
+
+    # build weight map
     weights = torch.zeros((H,W), dtype=torch.float32, device=dev)
     weights[bin_img] = float(STROKE_W)
     for i, r in enumerate(rings):
         wv = ring_w[i] if i < len(ring_w) else ring_w[-1]
         weights[r] = float(wv)
 
-    raw_weights = weights.clone()
-    if NORM_MEAN_ONE:
-        weights = weights / weights.mean().clamp(min=1e-8)
-
-# Save raw
+    # raw
     plt.figure(figsize=(5,5))
-    plt.imshow(raw_weights.cpu().numpy(), cmap='hot', interpolation='nearest')
-    plt.colorbar(label='Raw Weight Value'); plt.title(f'Raw Weights (tag={tag})')
-    plt.axis('off'); plt.tight_layout()
+    plt.imshow(weights.cpu().numpy(), cmap='hot')
+    plt.colorbar(label='Raw Weight Value')
+    plt.title(f'Raw Weights (tag={tag})'); plt.axis('off')
     plt.savefig(os.path.join(out_dir, f'{tag}_weights_heatmap_raw.png')); plt.close()
 
-# Save normalized
+    # normalized
+    norm_w = weights / weights[weights > 0].mean().clamp(min=1e-8) if NORM_MEAN_ONE else weights
     plt.figure(figsize=(5,5))
-    plt.imshow(weights.cpu().numpy(), cmap='hot', interpolation='nearest')
-    plt.colorbar(label='Weight Value'); plt.title(f'Normalized Weights (tag={tag})')
-    plt.axis('off'); plt.tight_layout()
+    plt.imshow(norm_w.cpu().numpy(), cmap='hot')
+    plt.colorbar(label='Weight Value')
+    plt.title(f'Normalized Weights (tag={tag})'); plt.axis('off')
     plt.savefig(os.path.join(out_dir, f'{tag}_weights_heatmap.png')); plt.close()
+
 
 
 def _binarize_mask(t: torch.Tensor, fg_is_white: bool = True) -> torch.Tensor:
