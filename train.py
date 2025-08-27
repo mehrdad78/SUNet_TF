@@ -3,6 +3,8 @@ import time
 import random
 import yaml
 import numpy as np
+import torch.nn.functional as F
+
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -417,7 +419,7 @@ for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
 
         target = data[0].cuda()
         input_ = data[1].cuda()
-        
+
         if i == 0:  # only first batch per epoch to keep it fast
             debug_dir = os.path.join(plots_root, 'weights_debug', 'train')
             save_weighting_debug(target[:1], k=K_RINGS, out_dir=debug_dir, tag=f'epoch_{epoch:03d}_train')
