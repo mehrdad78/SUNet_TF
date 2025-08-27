@@ -256,11 +256,14 @@ def make_weights_from_torch(target_t: torch.Tensor,
     dtype = target_t.dtype
 
     # binarize per-sample (GPU-friendly; only the mask gen uses a short CPU hop for rings)
-    # We keep the same thresholds you used.
-    if float(target_t.max()) <= 1.0:
-        bin_batch = (target_t > 0.5)
-    else:
-        bin_batch = (target_t > 127)
+    # We keep the same thresholds you used. 
+    FG_IS_WHITE = False   # <-- set False if strokes are black on white bg
+
+# ...
+    if target_t.size(1) != 1:
+        raise ValueError("make_weights_from_torch expects (B,1,H,W)")
+
+    bin_batch = _binarize_mask(target_t, fg_is_white=FG_IS_WHITE)  
 
     B, _, H, W = target_t.shape
     weights = torch.full((B, 1, H, W), fill_value=bg_min,
@@ -301,10 +304,11 @@ def save_weighting_debug(target_t: torch.Tensor, k: int, out_dir: str, tag: str,
     """
     _ensure_dir(out_dir)
     dev = target_t.device
-    if float(target_t.max()) <= 1.0:
-        bin_img = (target_t[0,0] > 0.5)
-    else:
-        bin_img = (target_t[0,0] > 127)
+    FG_IS_WHITE = False   # keep consistent with above
+
+# after you define dev:
+    bin_img = _binarize_mask(target_t[:1], fg_is_white=FG_IS_WHITE)[0,0]  # (H,W) bool on dev
+
 
     # Build rings
     bin_np = bin_img.to(torch.uint8).cpu().numpy()
@@ -342,6 +346,17 @@ def save_weighting_debug(target_t: torch.Tensor, k: int, out_dir: str, tag: str,
     plt.colorbar(label='Weight Value'); plt.title(f'Weights Heatmap (tag={tag})')
     plt.axis('off'); plt.tight_layout()
     plt.savefig(os.path.join(out_dir, f'{tag}_weights_heatmap.png')); plt.close()
+
+def _binarize_mask(t: torch.Tensor, fg_is_white: bool = True) -> torch.Tensor:
+    """
+    t: (B,1,H,W) in [0,1] or [0,255]
+    returns: bool mask with foreground=True
+    """
+    if float(t.max()) <= 1.0:
+        return (t > 0.5) if fg_is_white else (t < 0.5)
+    else:
+        return (t > 127) if fg_is_white else (t < 128)
+
 
 def _collect_scores(y_score, y_true, buf_scores, buf_trues, cap, collected_count):
     """Append scores/labels with an optional global cap to limit memory."""
@@ -420,13 +435,14 @@ for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
         target = data[0].cuda()
         input_ = data[1].cuda()
 
-        if i == 0:  # only first batch per epoch to keep it fast
-            debug_dir = os.path.join(plots_root, 'weights_debug', 'train')
-            save_weighting_debug(target[:1], k=K_RINGS, out_dir=debug_dir, tag=f'epoch_{epoch:03d}_train')
+      
         # if masks are RGB, convert; otherwise keep (B,1,H,W)
         if target.shape[1] == 3:
             target = 0.2989 * target[:, 0:1] + 0.5870 * \
                 target[:, 1:2] + 0.1140 * target[:, 2:3]
+        if i == 0:  # only first batch per epoch
+            debug_dir = os.path.join(plots_root, 'weights_debug', 'train')
+            save_weighting_debug(target[:1], k=K_RINGS, out_dir=debug_dir, tag=f'epoch_{epoch:03d}_train')
 
         logits = model_restored(input_)              # raw model output
         prob = torch.sigmoid(logits)               # for metrics
