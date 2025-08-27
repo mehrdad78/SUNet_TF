@@ -35,7 +35,7 @@ STYLE = {'train': '-', 'val': '--', 'test': ':'}
 K_RINGS = 2
 STROKE_W = 3.0
 RING_W = (3.0, 2.0, 1.0)
-NORM_MEAN_ONE = True
+NORM_MEAN_ONE = False
 FG_IS_WHITE = False 
 # ROC/PR collectors (subsample pixels to save RAM; 0 = no cap)
 TRAIN_AUROC_SUBSAMPLE = 200_000
@@ -316,7 +316,7 @@ def save_weighting_debug(target_t: torch.Tensor, k: int, out_dir: str, tag: str,
         bin_np, k=k, kernel_size=kernel_size, device="cuda" if dev.type=="cuda" else "cpu"
     )
     fg_ratio = bin_img.float().mean().item()
-    print(f"[debug] {tag}: FG pixel ratio = {fg_ratio:.4f}")
+    print(f"[debug] {tag}: FG pixel ratio = {fg_ratio:.4f}\n")
 
     # Compose weights like training
     H, W = bin_img.shape
