@@ -264,7 +264,7 @@ def make_weights_from_torch(target_t: torch.Tensor,
     if target_t.size(1) != 1:
         raise ValueError("make_weights_from_torch expects (B,1,H,W)")
 
-    bin_batch = _binarize_mask(target_t, fg_is_white=FG_IS_WHITE)  
+    bin_batch = _binarize_mask(target_t)  
 
     B, _, H, W = target_t.shape
     weights = torch.full((B, 1, H, W), fill_value=bg_min,
@@ -307,7 +307,7 @@ def save_weighting_debug(target_t: torch.Tensor, k: int, out_dir: str, tag: str,
     dev = target_t.device
 
     # binarize (0/255 → bool)
-    bin_img = _binarize_mask(target_t[:1], fg_is_white=FG_IS_WHITE)[0,0]  # (H,W) bool on dev
+    bin_img = _binarize_mask(target_t[:1])[0,0]  # (H,W) bool on dev
     H, W = bin_img.shape
 
     # --- rings ---
@@ -374,7 +374,7 @@ def save_rings_debug(target_t: torch.Tensor, k: int, out_dir: str, tag: str,
     dev = target_t.device
 
     # binarize once
-    bin_img = _binarize_mask(target_t[:1], fg_is_white=FG_IS_WHITE)[0,0]
+    bin_img = _binarize_mask(target_t[:1])[0,0]
     bin_np  = bin_img.to(torch.uint8).cpu().numpy()
 
     # compute rings
@@ -487,7 +487,7 @@ for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
         if i == 0:  # only first batch per epoch
             debug_dir = os.path.join(plots_root, 'weights_debug', 'train')
             print("target range:", float(target.min()), float(target.max()), target.dtype)
-            fg = _binarize_mask(target[:1], fg_is_white=FG_IS_WHITE)
+            fg = _binarize_mask(target[:1])
             print("fg ratio:", fg.float().mean().item())
 
             save_weighting_debug(target[:1], k=K_RINGS, out_dir=debug_dir, tag=f'epoch_{epoch:03d}_train')
