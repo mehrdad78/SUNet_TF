@@ -362,6 +362,43 @@ def _binarize_mask(t: torch.Tensor, fg_is_white: bool = True) -> torch.Tensor:
     else:
         return t <= thr
 
+@torch.no_grad()
+def save_rings_debug(target_t: torch.Tensor, k: int, out_dir: str, tag: str,
+                     kernel_size: int = 3):
+    """
+    Save and plot foreground and every dilation ring separately.
+    target_t: (1,1,H,W) tensor
+    """
+    os.makedirs(out_dir, exist_ok=True)
+    dev = target_t.device
+
+    # binarize once
+    bin_img = _binarize_mask(target_t[:1], fg_is_white=FG_IS_WHITE)[0,0]
+    bin_np  = bin_img.to(torch.uint8).cpu().numpy()
+
+    # compute rings
+    rings = background_adjacent_to_foreground_torch(
+        bin_np, k=k, kernel_size=kernel_size,
+        device="cuda" if dev.type=="cuda" else "cpu"
+    )
+
+    # foreground
+    plt.figure(figsize=(4,4))
+    plt.imshow(bin_img.cpu().numpy(), cmap='gray', interpolation='nearest')
+    plt.title(f'Foreground (tag={tag})'); plt.axis('off')
+    plt.tight_layout()
+    plt.savefig(os.path.join(out_dir, f'{tag}_fg.png'))
+    plt.close()
+
+    # each ring individually
+    for i, r in enumerate(rings, 1):
+        plt.figure(figsize=(4,4))
+        plt.imshow(r.cpu().numpy(), cmap='gray', interpolation='nearest')
+        plt.title(f'Ring {i}/{k} (tag={tag})')
+        plt.axis('off')
+        plt.tight_layout()
+        plt.savefig(os.path.join(out_dir, f'{tag}_ring_{i}.png'))
+        plt.close()
 
 
 def _collect_scores(y_score, y_true, buf_scores, buf_trues, cap, collected_count):
@@ -446,13 +483,18 @@ for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
         if target.shape[1] == 3:
             target = 0.2989 * target[:, 0:1] + 0.5870 * \
                 target[:, 1:2] + 0.1140 * target[:, 2:3]
-        if i <= 2:  # only first batch per epoch
+        if i == 0:  # only first batch per epoch
             debug_dir = os.path.join(plots_root, 'weights_debug', 'train')
             print("target range:", float(target.min()), float(target.max()), target.dtype)
             fg = _binarize_mask(target[:1], fg_is_white=FG_IS_WHITE)
             print("fg ratio:", fg.float().mean().item())
 
             save_weighting_debug(target[:1], k=K_RINGS, out_dir=debug_dir, tag=f'epoch_{epoch:03d}_train')
+        if i == 0:  # only first batch per epoch
+            debug_dir = os.path.join(plots_root, 'rings_debug', 'train')
+            save_rings_debug(target[:1], k=K_RINGS, out_dir=debug_dir,
+                     tag=f'epoch_{epoch:03d}_train')
+
 
         logits = model_restored(input_)              # raw model output
         prob = torch.sigmoid(logits)               # for metrics
