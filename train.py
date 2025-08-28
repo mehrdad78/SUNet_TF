@@ -520,7 +520,7 @@ for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
             normalize_to_mean_one=NORM_MEAN_ONE, bg_min=0.0, kernel_size=3
         )
         # NOTE: using logits in Charbonnier is fine with eps
-        loss = charbonnier_loss(logits, target, weight=weights, eps=1e-3)
+        loss = charbonnier_loss(prob, target, weight=weights, eps=1e-3)
 
         # Train MSE & weighted MSE (no grad)
         with torch.no_grad():
