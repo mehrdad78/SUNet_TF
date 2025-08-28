@@ -490,6 +490,8 @@ for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
             target = 0.2989 * target[:, 0:1] + 0.5870 * \
                 target[:, 1:2] + 0.1140 * target[:, 2:3]
             
+        print("RAW target range:", float(data[0].min()), float(data[0].max()), data[0].dtype)
+
         target = target / 255.0   # ensures [0,1]
         
 
