@@ -33,8 +33,8 @@ STYLE = {'train': '-', 'val': '--', 'test': ':'}
 
 # Boundary-weight settings
 K_RINGS = 2
-STROKE_W = 3.0
-RING_W   = (3.0, 3.0)   # or (3.0, 2.5)
+STROKE_W = 5.0
+RING_W   = (4.0, 2.0)  # or (3.0, 2.5)
 
 NORM_MEAN_ONE = False
 FG_IS_WHITE = False 
@@ -484,6 +484,10 @@ for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
         if target.shape[1] == 3:
             target = 0.2989 * target[:, 0:1] + 0.5870 * \
                 target[:, 1:2] + 0.1140 * target[:, 2:3]
+            
+        target = target / 255.0   # ensures [0,1]
+        target = 1.0 - target     # if you want black=1, white=0
+
         if i == 0:  # only first batch per epoch
             debug_dir = os.path.join(plots_root, 'weights_debug', 'train')
             print("target range:", float(target.min()), float(target.max()), target.dtype)
