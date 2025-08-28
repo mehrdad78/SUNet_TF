@@ -513,6 +513,7 @@ for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
 
         logits = model_restored(input_)              # raw model output
         prob = torch.sigmoid(logits)               # for metrics
+        print("Pred stats:", prob.min().item(), prob.max().item(), prob.mean().item())
 
         # weights & losses
         weights = make_weights_from_torch(
@@ -520,7 +521,7 @@ for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
             normalize_to_mean_one=NORM_MEAN_ONE, bg_min=0.0, kernel_size=3
         )
         # NOTE: using logits in Charbonnier is fine with eps
-        loss = charbonnier_loss(prob, target, weight=weights, eps=1e-3)
+        loss = charbonnier_loss(prob, target,  eps=1e-3)
 
         # Train MSE & weighted MSE (no grad)
         with torch.no_grad():
