@@ -492,7 +492,14 @@ for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
             
         print("RAW target range:", float(data[0].min()), float(data[0].max()), data[0].dtype)
 
-        target = target / 255.0   # ensures [0,1]
+        if target.dtype.is_floating_point and target.max() <= 1.0 + 1e-6:
+    # already [0,1], do nothing
+            pass
+        else:
+    # convert [0,255] → [0,1]
+            target = target / 255.0
+
+        target = 1.0 - target
         
 
         if i == 0:  # only first batch per epoch
