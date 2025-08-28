@@ -355,16 +355,13 @@ def save_weighting_debug(target_t: torch.Tensor, k: int, out_dir: str, tag: str,
 
 def _binarize_mask(t: torch.Tensor) -> torch.Tensor:
     """
-    Assumes white background (1.0 or 255), black foreground (0.0).
-    Returns: bool mask, True = foreground (black stroke).
+    Assumes input is already normalized [0,1] where:
+      - 1 = foreground (black strokes)
+      - 0 = background (white)
+    Returns a strict boolean mask: True = foreground.
     """
-    if t.dtype.is_floating_point:
-        if t.max() <= 1.0 + 1e-6:
-            return (t < 0.5)      # black ~0 → stroke
-        else:
-            return (t == 0.0)     # 0/255 scale
-    else:
-        return (t == 0)
+    return (t > 0.5)   # anything above 0.5 → foreground
+
 
 
 
