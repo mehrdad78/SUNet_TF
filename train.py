@@ -355,13 +355,18 @@ def save_weighting_debug(target_t: torch.Tensor, k: int, out_dir: str, tag: str,
 
 def _binarize_mask(t: torch.Tensor) -> torch.Tensor:
     """
-    Assumes target has white background (255) and black foreground (0).
-    Returns a strict boolean mask: True = foreground (black stroke).
+    Assumes white background (1.0 or 255), black foreground (0.0).
+    Returns: bool mask, True = foreground (black stroke).
     """
-    if t.max() > 1:   # 0/255 images
-        return (t == 0)        # black pixels → foreground
-    else:             # 0/1 images
+    if t.dtype.is_floating_point:
+        if t.max() <= 1.0 + 1e-6:
+            return (t < 0.5)      # black ~0 → stroke
+        else:
+            return (t == 0.0)     # 0/255 scale
+    else:
         return (t == 0)
+
+
 
 @torch.no_grad()
 def save_rings_debug(target_t: torch.Tensor, k: int, out_dir: str, tag: str,
@@ -486,7 +491,7 @@ for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
                 target[:, 1:2] + 0.1140 * target[:, 2:3]
             
         target = target / 255.0   # ensures [0,1]
-        target = 1.0 - target     # if you want black=1, white=0
+        
 
         if i == 0:  # only first batch per epoch
             debug_dir = os.path.join(plots_root, 'weights_debug', 'train')
