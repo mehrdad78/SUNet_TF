@@ -34,10 +34,10 @@ STYLE = {'train': '-', 'val': '--', 'test': ':'}
 # Boundary-weight settings
 K_RINGS = 2
 STROKE_W = 5.0
-RING_W   = (4.0, 2.0)  # or (3.0, 2.5)
+RING_W = (4.0, 2.0)  # or (3.0, 2.5)
 
 NORM_MEAN_ONE = False
-FG_IS_WHITE = False 
+FG_IS_WHITE = False
 # ROC/PR collectors (subsample pixels to save RAM; 0 = no cap)
 TRAIN_AUROC_SUBSAMPLE = 200_000
 VAL_AUROC_SUBSAMPLE = 0
@@ -123,6 +123,8 @@ os.makedirs(overlay_tv_d, exist_ok=True)
 overlay_tvt_d = os.path.join(plots_root, 'overlay', 'train_val_test')
 os.makedirs(overlay_tvt_d, exist_ok=True)
 
+
+
 # =========================
 # Optimizer / Scheduler
 # =========================
@@ -169,7 +171,7 @@ if test_dir and os.path.isdir(test_dir):
     test_dataset = get_validation_data(
         test_dir, {'patch_size': Train['VAL_PS']})
     test_loader = DataLoader(dataset=test_dataset, batch_size=1, shuffle=False,
-                             num_workers=0, drop_last=False)
+                            num_workers=0, drop_last=False)
 
 # =========================
 # Info
@@ -190,6 +192,105 @@ print('------------------------------------------------------------------')
 # Loss & helpers
 # =========================
 
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+
+class BCEDiceLoss(nn.Module):
+    """
+    Hybrid loss for binary segmentation: alpha * BCE + beta * (1 - Dice)
+
+    Args:
+        alpha (float): weight for BCE term.
+        beta (float):  weight for (1 - Dice) term.
+        from_logits (bool): if True, `pred` is raw logits; will apply sigmoid.
+        smooth (float): smoothing to avoid div-by-zero in Dice.
+        eps (float): numerical epsilon for stability.
+        pos_weight (torch.Tensor or None): same as in BCEWithLogitsLoss.
+        ignore_index (int or None): if set, positions where target==ignore_index are ignored.
+        reduction (str): 'mean' or 'sum' (applies after per-sample averaging).
+    """
+    def __init__(
+        self,
+        alpha: float = 0.5,
+        beta: float = 0.5,
+        from_logits: bool = True,
+        smooth: float = 1.0,
+        eps: float = 1e-7,
+        pos_weight: torch.Tensor = None,
+        ignore_index: int = None,
+        reduction: str = "mean",
+    ):
+        super().__init__()
+        self.alpha = float(alpha)
+        self.beta = float(beta)
+        self.from_logits = bool(from_logits)
+        self.smooth = float(smooth)
+        self.eps = float(eps)
+        self.pos_weight = pos_weight
+        self.ignore_index = ignore_index
+        assert reduction in ("mean", "sum")
+        self.reduction = reduction
+
+    def forward(self, pred: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
+        """
+        pred:   (B,1,H,W) logits or probabilities
+        target: (B,1,H,W) in {0,1}, or ignore_index at some positions
+        """
+        if target.dtype != torch.float32 and target.dtype != torch.float16:
+            target = target.float()
+
+        if self.ignore_index is not None:
+            valid_mask = (target != float(self.ignore_index))
+            # Replace ignored target with 0 just to keep shapes consistent; mask will remove effect.
+            target = torch.where(valid_mask, target, torch.zeros_like(target))
+        else:
+            valid_mask = torch.ones_like(target, dtype=torch.bool)
+
+        # BCE term
+        if self.from_logits:
+            bce = F.binary_cross_entropy_with_logits(
+                pred[valid_mask],
+                target[valid_mask],
+                pos_weight=self.pos_weight,
+                reduction="mean"
+            )
+            prob = torch.sigmoid(pred)
+        else:
+            # pred already in [0,1]
+            bce = F.binary_cross_entropy(
+                pred[valid_mask],
+                target[valid_mask],
+                reduction="mean"
+            )
+            prob = pred
+
+        # Dice term (per-sample, then average)
+        # Clamp for stability
+        prob = torch.clamp(prob, min=self.eps, max=1.0 - self.eps)
+
+        # Apply valid_mask
+        prob = prob * valid_mask
+        target = target * valid_mask
+
+        # Flatten per-sample
+        B = pred.shape[0]
+        prob_f = prob.view(B, -1)
+        targ_f = target.view(B, -1)
+
+        intersection = (prob_f * targ_f).sum(dim=1)
+        union = prob_f.sum(dim=1) + targ_f.sum(dim=1)
+        dice_score = (2.0 * intersection + self.smooth) / (union + self.smooth + self.eps)
+        dice_loss = 1.0 - dice_score  # shape (B,)
+
+        if self.reduction == "mean":
+            dice_loss = dice_loss.mean()
+        else:
+            dice_loss = dice_loss.sum()
+
+        # Combine
+        loss = self.alpha * bce + self.beta * dice_loss
+        return loss
 
 def charbonnier_loss(pred, target, weight=None, eps=1e-3):
     diff = pred - target
@@ -257,14 +358,14 @@ def make_weights_from_torch(target_t: torch.Tensor,
     dtype = target_t.dtype
 
     # binarize per-sample (GPU-friendly; only the mask gen uses a short CPU hop for rings)
-    # We keep the same thresholds you used. 
-  # <-- set False if strokes are black on white bg
+    # We keep the same thresholds you used.
+    # <-- set False if strokes are black on white bg
 
 # ...
     if target_t.size(1) != 1:
         raise ValueError("make_weights_from_torch expects (B,1,H,W)")
 
-    bin_batch = _binarize_mask(target_t)  
+    bin_batch = _binarize_mask(target_t)
 
     B, _, H, W = target_t.shape
     weights = torch.full((B, 1, H, W), fill_value=bg_min,
@@ -292,13 +393,15 @@ def make_weights_from_torch(target_t: torch.Tensor,
         weights = weights / m
 
     return weights.to(dtype=dtype)
-# ========= Debug plotting of weighting process =========
-def _ensure_dir(d): 
+
+
+def _ensure_dir(d):
     os.makedirs(d, exist_ok=True)
+
 
 @torch.no_grad()
 def save_weighting_debug(target_t: torch.Tensor, k: int, out_dir: str, tag: str,
-                         ring_w=(3.0,2.0,1.0), kernel_size=3):
+                         ring_w=(3.0, 2.0, 1.0), kernel_size=3):
     """
     Saves: (a) FG mask, (b) each ring mask, (c) raw + normalized heatmap
     target_t: (1,1,H,W) tensor
@@ -307,61 +410,64 @@ def save_weighting_debug(target_t: torch.Tensor, k: int, out_dir: str, tag: str,
     dev = target_t.device
 
     # binarize (0/255 → bool)
-    bin_img = _binarize_mask(target_t[:1])[0,0]  # (H,W) bool on dev
+    bin_img = _binarize_mask(target_t[:1])[0, 0]  # (H,W) bool on dev
     H, W = bin_img.shape
 
     # --- rings ---
     bin_np = bin_img.to(torch.uint8).cpu().numpy()
     rings = background_adjacent_to_foreground_torch(
-        bin_np, k=k, kernel_size=kernel_size, device="cuda" if dev.type=="cuda" else "cpu"
+        bin_np, k=k, kernel_size=kernel_size, device="cuda" if dev.type == "cuda" else "cpu"
     )
 
     # plot foreground
-    plt.figure(figsize=(4,4))
+    plt.figure(figsize=(4, 4))
     plt.imshow(bin_img.cpu().numpy(), cmap='gray')
-    plt.title(f'Foreground (tag={tag})'); plt.axis('off')
-    plt.savefig(os.path.join(out_dir, f'{tag}_fg.png')); plt.close()
+    plt.title(f'Foreground (tag={tag})')
+    plt.axis('off')
+    plt.savefig(os.path.join(out_dir, f'{tag}_fg.png'))
+    plt.close()
 
     # plot rings one by one
     for i, r in enumerate(rings, 1):
-        plt.figure(figsize=(4,4))
+        plt.figure(figsize=(4, 4))
         plt.imshow(r.cpu().numpy(), cmap='gray')
-        plt.title(f'Ring {i}/{k}'); plt.axis('off')
-        plt.savefig(os.path.join(out_dir, f'{tag}_ring_{i}.png')); plt.close()
+        plt.title(f'Ring {i}/{k}')
+        plt.axis('off')
+        plt.savefig(os.path.join(out_dir, f'{tag}_ring_{i}.png'))
+        plt.close()
 
     # build weight map
-    weights = torch.zeros((H,W), dtype=torch.float32, device=dev)
+    weights = torch.zeros((H, W), dtype=torch.float32, device=dev)
     weights[bin_img] = float(STROKE_W)
     for i, r in enumerate(rings):
         wv = ring_w[i] if i < len(ring_w) else ring_w[-1]
         weights[r] = float(wv)
 
     # raw
-    plt.figure(figsize=(5,5))
+    plt.figure(figsize=(5, 5))
     plt.imshow(weights.cpu().numpy(), cmap='hot')
     plt.colorbar(label='Raw Weight Value')
-    plt.title(f'Raw Weights (tag={tag})'); plt.axis('off')
-    plt.savefig(os.path.join(out_dir, f'{tag}_weights_heatmap_raw.png')); plt.close()
+    plt.title(f'Raw Weights (tag={tag})')
+    plt.axis('off')
+    plt.savefig(os.path.join(out_dir, f'{tag}_weights_heatmap_raw.png'))
+    plt.close()
 
     # normalized
-    norm_w = weights / weights[weights > 0].mean().clamp(min=1e-8) if NORM_MEAN_ONE else weights
-    plt.figure(figsize=(5,5))
+    norm_w = weights / \
+        weights[weights > 0].mean().clamp(
+            min=1e-8) if NORM_MEAN_ONE else weights
+    plt.figure(figsize=(5, 5))
     plt.imshow(norm_w.cpu().numpy(), cmap='hot')
     plt.colorbar(label='Weight Value')
-    plt.title(f'Normalized Weights (tag={tag})'); plt.axis('off')
-    plt.savefig(os.path.join(out_dir, f'{tag}_weights_heatmap.png')); plt.close()
-
+    plt.title(f'Normalized Weights (tag={tag})')
+    plt.axis('off')
+    plt.savefig(os.path.join(out_dir, f'{tag}_weights_heatmap.png'))
+    plt.close()
 
 
 def _binarize_mask(t: torch.Tensor) -> torch.Tensor:
-    """
-    Assumes input is already normalized [0,1] where:
-      - 1 = foreground (black strokes)
-      - 0 = background (white)
-    Returns a strict boolean mask: True = foreground.
-    """
-    return (t > 0.5)   # anything above 0.5 → foreground
-
+    """No-op when target already in {0,1} with 1=foreground."""
+    return t.bool()
 
 
 
@@ -376,26 +482,27 @@ def save_rings_debug(target_t: torch.Tensor, k: int, out_dir: str, tag: str,
     dev = target_t.device
 
     # binarize once
-    bin_img = _binarize_mask(target_t[:1])[0,0]
-    bin_np  = bin_img.to(torch.uint8).cpu().numpy()
+    bin_img = _binarize_mask(target_t[:1])[0, 0]
+    bin_np = bin_img.to(torch.uint8).cpu().numpy()
 
     # compute rings
     rings = background_adjacent_to_foreground_torch(
         bin_np, k=k, kernel_size=kernel_size,
-        device="cuda" if dev.type=="cuda" else "cpu"
+        device="cuda" if dev.type == "cuda" else "cpu"
     )
 
     # foreground
-    plt.figure(figsize=(4,4))
+    plt.figure(figsize=(4, 4))
     plt.imshow(bin_img.cpu().numpy(), cmap='gray', interpolation='nearest')
-    plt.title(f'Foreground (tag={tag})'); plt.axis('off')
+    plt.title(f'Foreground (tag={tag})')
+    plt.axis('off')
     plt.tight_layout()
     plt.savefig(os.path.join(out_dir, f'{tag}_fg.png'))
     plt.close()
 
     # each ring individually
     for i, r in enumerate(rings, 1):
-        plt.figure(figsize=(4,4))
+        plt.figure(figsize=(4, 4))
         plt.imshow(r.cpu().numpy(), cmap='gray', interpolation='nearest')
         plt.title(f'Ring {i}/{k} (tag={tag})')
         plt.axis('off')
@@ -481,42 +588,51 @@ for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
         target = data[0].cuda()
         input_ = data[1].cuda()
 
-      
         # if masks are RGB, convert; otherwise keep (B,1,H,W)
         if target.shape[1] == 3:
             target = 0.2989 * target[:, 0:1] + 0.5870 * \
                 target[:, 1:2] + 0.1140 * target[:, 2:3]
-            
-        print("RAW target range:", float(data[0].min()), float(data[0].max()), data[0].dtype)
+
+        print("RAW target range:", float(data[0].min()), float(
+            data[0].max()), data[0].dtype)
+
+        if not target.dtype.is_floating_point or target.max() > 1.0 + 1e-6:
+            # convert [0,255] → [0,1]
+            target = target / 255.0
 
         # invert so black strokes = 1, white bg = 0
-        #target = 1.0 - target
-
-        
+        target = 1.0 - target
 
         if i == 0:  # only first batch per epoch
             debug_dir = os.path.join(plots_root, 'weights_debug', 'train')
-            print("target range:", float(target.min()), float(target.max()), target.dtype)
+            print("target range:", float(target.min()),
+                  float(target.max()), target.dtype)
             fg = _binarize_mask(target[:1])
             print("fg ratio:", fg.float().mean().item())
 
-            save_weighting_debug(target[:1], k=K_RINGS, out_dir=debug_dir, tag=f'epoch_{epoch:03d}_train')
+            save_weighting_debug(
+                target[:1], k=K_RINGS, out_dir=debug_dir, tag=f'epoch_{epoch:03d}_train')
         if i == 0:  # only first batch per epoch
             debug_dir = os.path.join(plots_root, 'rings_debug', 'train')
             save_rings_debug(target[:1], k=K_RINGS, out_dir=debug_dir,
-                     tag=f'epoch_{epoch:03d}_train')
+                             tag=f'epoch_{epoch:03d}_train')
 
 
-        logits = model_restored(input_)              # raw model output
-        prob = torch.sigmoid(logits)               # for metrics
 
         # weights & losses
         weights = make_weights_from_torch(
             target, k=K_RINGS, stroke_w=STROKE_W, ring_w=RING_W,
             normalize_to_mean_one=NORM_MEAN_ONE, bg_min=0.0, kernel_size=3
         )
-        # NOTE: using logits in Charbonnier is fine with eps
-        loss = charbonnier_loss(prob, target, weight=weights, eps=1e-3)
+
+        logits = model_restored(input_) 
+        criterion = BCEDiceLoss(pos_weight=torch.tensor([5.0]).cuda())  
+        loss = criterion(logits, target, weight=weights)  
+        loss.backward()
+
+        prob = torch.sigmoid(logits)               
+        print("Pred stats:", prob.min().item(),prob.max().item(), prob.mean().item())
+
 
         # Train MSE & weighted MSE (no grad)
         with torch.no_grad():
@@ -542,7 +658,7 @@ for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
                 else:
                     tr_skipped += 1
 
-        loss.backward()
+    
         optimizer.step()
         epoch_loss += loss.item()
 
