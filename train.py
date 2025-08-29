@@ -197,100 +197,27 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 class BCEDiceLoss(nn.Module):
-    """
-    Hybrid loss for binary segmentation: alpha * BCE + beta * (1 - Dice)
-
-    Args:
-        alpha (float): weight for BCE term.
-        beta (float):  weight for (1 - Dice) term.
-        from_logits (bool): if True, `pred` is raw logits; will apply sigmoid.
-        smooth (float): smoothing to avoid div-by-zero in Dice.
-        eps (float): numerical epsilon for stability.
-        pos_weight (torch.Tensor or None): same as in BCEWithLogitsLoss.
-        ignore_index (int or None): if set, positions where target==ignore_index are ignored.
-        reduction (str): 'mean' or 'sum' (applies after per-sample averaging).
-    """
-    def __init__(
-        self,
-        alpha: float = 0.5,
-        beta: float = 0.5,
-        from_logits: bool = True,
-        smooth: float = 1.0,
-        eps: float = 1e-7,
-        pos_weight: torch.Tensor = None,
-        ignore_index: int = None,
-        reduction: str = "mean",
-    ):
+    def __init__(self, bce_weight=0.5, pos_weight=None):
         super().__init__()
-        self.alpha = float(alpha)
-        self.beta = float(beta)
-        self.from_logits = bool(from_logits)
-        self.smooth = float(smooth)
-        self.eps = float(eps)
-        self.pos_weight = pos_weight
-        self.ignore_index = ignore_index
-        assert reduction in ("mean", "sum")
-        self.reduction = reduction
+        self.bce = nn.BCEWithLogitsLoss(pos_weight=pos_weight, reduction="none")
+        self.bce_weight = bce_weight
 
-    def forward(self, pred: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
-        """
-        pred:   (B,1,H,W) logits or probabilities
-        target: (B,1,H,W) in {0,1}, or ignore_index at some positions
-        """
-        if target.dtype != torch.float32 and target.dtype != torch.float16:
-            target = target.float()
-
-        if self.ignore_index is not None:
-            valid_mask = (target != float(self.ignore_index))
-            # Replace ignored target with 0 just to keep shapes consistent; mask will remove effect.
-            target = torch.where(valid_mask, target, torch.zeros_like(target))
+    def forward(self, logits, targets, weight=None):
+        # --- BCE part ---
+        bce = self.bce(logits, targets)   # per-pixel loss
+        if weight is not None:
+            bce = (bce * weight).sum() / weight.sum().clamp(min=1e-8)
         else:
-            valid_mask = torch.ones_like(target, dtype=torch.bool)
+            bce = bce.mean()
 
-        # BCE term
-        if self.from_logits:
-            bce = F.binary_cross_entropy_with_logits(
-                pred[valid_mask],
-                target[valid_mask],
-                pos_weight=self.pos_weight,
-                reduction="mean"
-            )
-            prob = torch.sigmoid(pred)
-        else:
-            # pred already in [0,1]
-            bce = F.binary_cross_entropy(
-                pred[valid_mask],
-                target[valid_mask],
-                reduction="mean"
-            )
-            prob = pred
+        # --- Dice part ---
+        probs = torch.sigmoid(logits)
+        smooth = 1.0
+        intersection = (probs * targets).sum(dim=(1,2,3))
+        dice = (2.*intersection + smooth) / (probs.sum(dim=(1,2,3)) + targets.sum(dim=(1,2,3)) + smooth)
+        dice_loss = 1 - dice.mean()
 
-        # Dice term (per-sample, then average)
-        # Clamp for stability
-        prob = torch.clamp(prob, min=self.eps, max=1.0 - self.eps)
-
-        # Apply valid_mask
-        prob = prob * valid_mask
-        target = target * valid_mask
-
-        # Flatten per-sample
-        B = pred.shape[0]
-        prob_f = prob.view(B, -1)
-        targ_f = target.view(B, -1)
-
-        intersection = (prob_f * targ_f).sum(dim=1)
-        union = prob_f.sum(dim=1) + targ_f.sum(dim=1)
-        dice_score = (2.0 * intersection + self.smooth) / (union + self.smooth + self.eps)
-        dice_loss = 1.0 - dice_score  # shape (B,)
-
-        if self.reduction == "mean":
-            dice_loss = dice_loss.mean()
-        else:
-            dice_loss = dice_loss.sum()
-
-        # Combine
-        loss = self.alpha * bce + self.beta * dice_loss
-        return loss
+        return self.bce_weight * bce + (1 - self.bce_weight) * dice_loss
 
 def charbonnier_loss(pred, target, weight=None, eps=1e-3):
     diff = pred - target
