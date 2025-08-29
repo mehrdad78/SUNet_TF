@@ -393,8 +393,8 @@ def save_weighting_debug(target_t: torch.Tensor, k: int, out_dir: str, tag: str,
 
 
 def _binarize_mask(t: torch.Tensor) -> torch.Tensor:
-    """No-op when target already in {0,1} with 1=foreground."""
-    return t.bool()
+    return (t > 0.5)   # fg = 1, bg = 0
+
 
 
 
@@ -530,7 +530,9 @@ for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
         # invert so black strokes = 1, white bg = 0
         target = 1.0 - target
 
-        if i == 0:  # only first batch per epoch
+        if i == 0:
+            print("Target unique values:", torch.unique(target))
+
             debug_dir = os.path.join(plots_root, 'weights_debug', 'train')
             print("target range:", float(target.min()),
                   float(target.max()), target.dtype)
