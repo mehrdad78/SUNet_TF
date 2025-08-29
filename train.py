@@ -219,6 +219,41 @@ class BCEDiceLoss(nn.Module):
 
         return self.bce_weight * bce + (1 - self.bce_weight) * dice_loss
 
+
+class WeightedBCEDiceLoss(nn.Module):
+    def __init__(self, bce_weight=0.5, pos_weight=None):
+        """
+        bce_weight: fraction of BCE contribution (0..1).
+        pos_weight: optional tensor for BCE (class balancing).
+        """
+        super().__init__()
+        self.bce = nn.BCEWithLogitsLoss(pos_weight=pos_weight, reduction="none")
+        self.bce_weight = bce_weight
+
+    def forward(self, logits, targets, weight=None):
+        """
+        logits: raw model outputs (B,1,H,W)
+        targets: ground truth in {0,1}, (B,1,H,W)
+        weight: optional per-pixel weighting mask (B,1,H,W)
+        """
+        # ---- BCE ----
+        bce = self.bce(logits, targets)  # per-pixel BCE
+        if weight is not None:
+            bce = (bce * weight).sum() / weight.sum().clamp(min=1e-8)
+        else:
+            bce = bce.mean()
+
+        # ---- Dice ----
+        probs = torch.sigmoid(logits)
+        smooth = 1.0
+        intersection = (probs * targets).sum(dim=(1,2,3))
+        dice = (2.*intersection + smooth) / (probs.sum(dim=(1,2,3)) + targets.sum(dim=(1,2,3)) + smooth)
+        dice_loss = 1 - dice.mean()
+
+        # ---- Hybrid ----
+        return self.bce_weight * bce + (1 - self.bce_weight) * dice_loss
+
+
 def charbonnier_loss(pred, target, weight=None, eps=1e-3):
     diff = pred - target
     l = torch.sqrt(diff * diff + eps * eps)
@@ -555,7 +590,7 @@ for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
         )
 
         logits = model_restored(input_) 
-        criterion = BCEDiceLoss(pos_weight=torch.tensor([5.0]).cuda())  
+        criterion = WeightedBCEDiceLoss(bce_weight=0.7, pos_weight=torch.tensor([5.0]).cuda())   
         loss = criterion(logits, target, weight=weights)  
         loss.backward()
 
