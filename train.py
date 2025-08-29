@@ -555,8 +555,10 @@ for epoch in range(start_epoch, OPT['EPOCHS'] + 1):
         )
 
         logits = model_restored(input_) 
-        criterion = BCEDiceLoss(pos_weight=torch.tensor([5.0]).cuda())  
-        loss = criterion(logits, target, weight=weights)  
+        #criterion = BCEDiceLoss(pos_weight=torch.tensor([5.0]).cuda())  
+        #loss = criterion(logits, target, weight=weights)  
+        loss = charbonnier_loss(logits, target, weight=weights, eps=1e-3)
+
         loss.backward()
 
         prob = torch.sigmoid(logits)               
